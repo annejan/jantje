@@ -330,6 +330,128 @@ def build(path, out, tempo, rows_per_pat, hihat_div=2, mode="shared", chmap=None
     serialize_sng(out, title, tempo, grid, rows_per_pat)
 
 
+# ---------------------------------------------------------------------------
+# Arranger: stage a flat source loop into intro -> build -> drop -> full ...
+#
+# Some source MIDIs are a single bar-aligned loop with every part playing from
+# bar 0 (e.g. cprato's Sandstorm: lead+bass+drums all on from the downbeat). As
+# one pass that has no tension — the climax is the start, then it just repeats.
+# Real eurodance/EDM develops by *revealing layers*. So instead of one pass we
+# tile the loop into named sections, each exposing a subset of the four layers
+# (k=kick, h=hat/snare, b=bass, l=lead), with an optional rising-noise riser on
+# a section's last bar to lead into the next.
+PRESETS = {
+    #          bars:layers   (r in layers = riser on the last bar)
+    "darude": "8:k,8:khr,8:khb,16:khbl,16:khbl,8:khr,16:khbl",
+}
+
+def parse_arrange(spec):
+    """'8:k,8:khr,...' -> [(bars, layerset, riser_tail), ...]."""
+    spec = PRESETS.get(spec, spec)
+    out = []
+    for tok in spec.split(","):
+        bars_s, layers = tok.split(":")
+        out.append((int(bars_s),
+                    set(c for c in layers if c in "khbl"),
+                    "r" in layers))
+    return out
+
+def build_arranged(path, out, tempo, rows_per_pat, sections,
+                   hihat_div=2, chmap=None, title="Arranged"):
+    div, end_tick, notes, drums = parse_midi(path)
+    if chmap:
+        def pick(tok):
+            tok = tok.strip()
+            return None if tok in ("", "-") else int(tok) - 1
+        parts = (chmap.split(",") + ["-", "-", "-"])[:3]
+        lead_ch, bass_ch, _ = (pick(p) for p in parts)
+    else:
+        ranked = sorted((sum(n[2] for n in ns)/len(ns), ch)
+                        for ch, ns in notes.items() if ns)
+        bass_ch, lead_ch = ranked[0][1], ranked[-1][1]
+
+    tpr = div / 4.0
+    ROWS_PER_BAR = 16
+    base_bars = max(1, -(-end_tick // (div * 4)))     # ceil to whole bars
+    base_rows = base_bars * ROWS_PER_BAR
+
+    # ---- the four separable source layers, one bar-aligned base loop each ----
+    def layer(ch_notes, instr):
+        g = [(REST, 0)] * base_rows
+        ev = sorted(ch_notes)
+        for i, (start, dur, pit) in enumerate(ev):
+            r = int(round(start / tpr))
+            if not (0 <= r < base_rows): continue
+            g[r] = (note_byte(pit), instr)
+            endr = r + max(1, int(round(dur / tpr)))
+            nxt = int(round(ev[i+1][0] / tpr)) if i+1 < len(ev) else base_rows
+            if r < endr < nxt and endr < base_rows and g[endr][0] == REST:
+                g[endr] = (KEYOFF, 0)
+        return g
+
+    gL = layer(notes[lead_ch], 1) if lead_ch is not None else [(REST, 0)] * base_rows
+    gB = layer(notes[bass_ch], 2) if bass_ch is not None else [(REST, 0)] * base_rows
+
+    # one drum per row (kick > snare/clap > hat > tom), reusing the main map
+    drumdef = {"kick": (4, note_byte(36), 5), "snare": (5, note_byte(60), 4),
+               "clap": (5, note_byte(60), 4), "rim": (5, note_byte(60), 4),
+               "hihat": (6, note_byte(72), 2), "openhat": (6, note_byte(74), 2),
+               "ride": (6, note_byte(72), 2), "tom": (7, note_byte(48), 3)}
+    best = {}
+    for start, gm in drums:
+        name = GM_DRUM.get(gm)
+        if name not in drumdef: continue
+        instr, nb, prio = drumdef[name]
+        r = int(round(start / tpr))
+        if 0 <= r < base_rows and (r not in best or prio > best[r][0]):
+            best[r] = (prio, instr, nb)
+    gK = [(REST, 0)] * base_rows                      # kick layer
+    gP = [(REST, 0)] * base_rows                      # snare/hat/tom layer
+    for r, (prio, instr, nb) in best.items():
+        if instr == 4:
+            gK[r] = (nb, 4)
+        elif not (instr == 6 and r % hihat_div):      # thin busy hihats
+            gP[r] = (nb, instr)
+
+    def riser_bar(seg, lo):                           # climbing noise -> a build
+        for k in range(ROWS_PER_BAR):
+            seg[lo + k] = (note_byte(40 + int(48 * k / (ROWS_PER_BAR - 1))), 5)
+
+    # ---- tile the sections into the final 3-channel grid ----------------------
+    out0, out1, out2 = [], [], []
+    for bars, layers, riser_tail in sections:
+        n = bars * ROWS_PER_BAR
+        s0 = [gL[r % base_rows] if "l" in layers else (REST, 0) for r in range(n)]
+        s1 = [gB[r % base_rows] if "b" in layers else (REST, 0) for r in range(n)]
+        s2 = [gP[r % base_rows] if "h" in layers else (REST, 0) for r in range(n)]
+        if "k" in layers:                             # kick onto the bass channel
+            active = []                               # with the blip-then-resume trick
+            cur = (REST, 0)
+            for n0, ci in s1:
+                if n0 == KEYOFF: cur = (REST, 0)
+                elif n0 != REST: cur = (n0, ci)
+                active.append(cur)
+            for r in range(n):
+                k = gK[r % base_rows]
+                if k[0] == REST: continue
+                had = s1[r][0] not in (REST, KEYOFF)
+                s1[r] = k
+                if had and r+1 < n and s1[r+1][0] == REST and active[r][0] != REST:
+                    s1[r+1] = active[r]
+        if riser_tail:
+            riser_bar(s2, n - ROWS_PER_BAR)
+        out0 += s0; out1 += s1; out2 += s2
+
+    total = len(out0)
+    print(f"{(path or 'src').split('/')[-1]}: {base_bars}-bar loop -> "
+          f"{len(sections)} sections, {total} rows ({total//ROWS_PER_BAR} bars)")
+    print("  lead=ch{} bass=ch{}  layers per section: {}".format(
+        lead_ch+1 if lead_ch is not None else "-",
+        bass_ch+1 if bass_ch is not None else "-",
+        " ".join("".join(sorted(ly)) or "-" for _, ly, _ in sections)))
+    serialize_sng(out, title, tempo, [out0, out1, out2], rows_per_pat)
+
+
 def serialize_sng(out, title, tempo, grid, rows_per_pat):
     """Write the grid (3 or 6 channels) + the shared instrument/table bank to a
     GTS5 .sng. 6 channels auto-load as dual-SID stereo in the editor."""
@@ -522,13 +644,22 @@ if __name__ == "__main__":
     ap.add_argument("--harm", help="stem file for the harmony voice")
     ap.add_argument("--drums", help="stem file for the drum kit")
     ap.add_argument("--title", default="In The Navy", help="song name in the .sng/.sid")
+    ap.add_argument("--arrange", default=None, metavar="PRESET|SPEC",
+                    help="stage a flat source loop into build/drop sections. "
+                         "A preset name (" + "|".join(PRESETS) + ") or a spec "
+                         "'BARS:LAYERS,...' where LAYERS subset khbl (k=kick "
+                         "h=hat/snare b=bass l=lead) + optional r = riser on the "
+                         "last bar, e.g. 8:k,8:khr,16:khbl")
     ap.add_argument("--voice", action="append", default=[], metavar="CH=ROLE=FILE",
                     help="OPT-IN dual-SID: assign a stem to a SID voice. CH 1-6 "
                          "(1-3=SID1, 4-6=SID2), ROLE lead|bass|harm|counter|pad|"
                          "drums. Repeatable. Any --voice -> 6-channel stereo .sng; "
                          "without it everything stays 3-channel mono.")
     a = ap.parse_args()
-    if a.voice:                       # opt-in dual-SID; default path is mono
+    if a.arrange:                     # stage a flat loop into build/drop sections
+        build_arranged(a.inp, a.out, a.tempo, a.rows_per_pat,
+                       parse_arrange(a.arrange), a.hihat_div, a.map, a.title)
+    elif a.voice:                     # opt-in dual-SID; default path is mono
         voices = []
         for v in a.voice:
             ch, role, f = v.split("=", 2)

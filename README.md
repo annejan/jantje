@@ -44,6 +44,23 @@ python3 midi_to_sng.py out.sng \
 `CH` 1-6 (1-3 = SID1, 4-6 = SID2); `ROLE` = lead|bass|harm|counter|pad|drums.
 The editor auto-detects the 6 channels on load.
 
+### Staging a flat loop into build/drop (`--arrange`)
+
+Some source MIDIs are a single bar-aligned loop with every part on from bar 0
+(e.g. cprato's Sandstorm: lead+bass+drums all play the downbeat). One pass has
+no tension — the climax is the start, then it just repeats. `--arrange` tiles
+the loop into named sections, each revealing a subset of the four layers
+(`k`=kick `h`=hat/snare `b`=bass `l`=lead), with an optional rising-noise riser
+(`r`) on a section's last bar:
+
+```sh
+python3 midi_to_sng.py sandstorm.mid out.sng --map 8,4,- --arrange darude
+# darude preset = 8:k,8:khr,8:khb,16:khbl,16:khbl,8:khr,16:khbl
+#   intro(kick) -> build(+hat+riser) -> groove(+bass) -> DROP(+lead) -> ...
+```
+
+Pass a custom `BARS:LAYERS,...` spec instead of a preset name for any shape.
+
 See `AGENTS.md` for every knob (`--mode`, `--map`, `--kick-bass`, `--fill`,
 `--tempo`, `--title`, …) and the live-audition RPC loop.
 
