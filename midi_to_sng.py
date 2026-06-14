@@ -205,7 +205,8 @@ def build(path, out, tempo, rows_per_pat, hihat_div=2, mode="shared", chmap=None
                     elif prev is not None:
                         grid[0][k] = (KEYOFF, 0); prev = None
             r = j
-        print(f"  fill: {filled} counter-melody notes from ch{fill+1} into lead holes")
+        print(f"  fill: {filled} counter-melody notes from "
+              f"ch{','.join(str(c+1) for c in fill)} into lead holes")
 
     # ----- fatten a thin intro (BEFORE drums, so the kick punches through) -----
     # The famous hook plays for a long stretch before the real bass enters
@@ -670,10 +671,12 @@ if __name__ == "__main__":
     ap.add_argument("--kick-bass", action="store_true",
                     help="put the kick on the bass channel (fills its rests, "
                          "thickens low end); snare/hat stay with the harmony")
-    ap.add_argument("--fill", default=None, type=lambda x: int(x) - 1,
-                    metavar="CHAN",
-                    help="fill the lead channel's rests from this MIDI channel "
-                         "(1-based) on a soft instrument, e.g. the piano comp")
+    ap.add_argument("--fill", default=None,
+                    type=lambda x: [int(t) - 1 for t in x.split(",")],
+                    metavar="CHAN[,CHAN...]",
+                    help="fill the lead channel's rests from these MIDI channels "
+                         "(1-based, priority pool: first listed wins) on a soft "
+                         "instrument, e.g. the brass hook / piano comp")
     ap.add_argument("--lead", help="stem file for the lead voice")
     ap.add_argument("--bass", help="stem file for the bass voice")
     ap.add_argument("--harm", help="stem file for the harmony voice")
