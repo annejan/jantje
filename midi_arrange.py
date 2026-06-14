@@ -18,7 +18,8 @@ NOTE = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B']
 def nm(p): return f"{NOTE[p%12]}{p//12-1}"
 
 def parse(path):
-    d = open(path, "rb").read()
+    with open(path, "rb") as f:
+        d = f.read()
     assert d[:4] == b"MThd"
     fmt, ntrks, div = struct.unpack(">HHH", d[8:14])
     pos = 8 + struct.unpack(">I", d[4:8])[0]
@@ -90,7 +91,7 @@ def main(path):
         bass = rows[0][1]
         lead = rows[-1][1]
         mids = [r[1] for r in rows[1:-1]]
-        print(f"\nProposed melodic roles:")
+        print("\nProposed melodic roles:")
         print(f"  BASS    <- ch{bass+1}")
         print(f"  LEAD    <- ch{lead+1}")
         if mids:
@@ -101,8 +102,8 @@ def main(path):
         kit[GM_DRUMS.get(note, f"perc{note}")] += c
     for name, c in kit.most_common():
         print(f"  {name:8s}: {c:4d} hits")
-    print(f"\n-> SID drum map: kick=triangle pitch-drop, snare/clap=noise burst, "
-          f"hihat/openhat=short noise")
+    print("\n-> SID drum map: kick=triangle pitch-drop, snare/clap=noise burst, "
+          "hihat/openhat=short noise")
 
 if __name__ == "__main__":
     main(sys.argv[1] if len(sys.argv) > 1

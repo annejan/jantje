@@ -1,0 +1,16 @@
+# Optional local guardrail: `pip install pre-commit && pre-commit install`.
+# Mirrors the GitHub CI checks so lint/test run before you commit.
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.15.17
+    hooks:
+      - id: ruff           # lint (config in pyproject.toml)
+        args: [--fix]
+  - repo: local
+    hooks:
+      - id: pytest
+        name: pytest (smoke tests)
+        entry: python -m pytest
+        language: system
+        pass_filenames: false
+        always_run: true

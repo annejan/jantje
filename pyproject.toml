@@ -1,0 +1,37 @@
+# Jantje — parametric MIDI -> GoatTracker .sng arranger.
+# Pure stdlib at runtime; the dev tools below are only for lint/test/CI.
+
+[project]
+name = "jantje"
+version = "0.1.0"
+description = "Parametric MIDI / stems -> GoatTracker 2 .sng dance-cover arranger"
+requires-python = ">=3.9"
+dependencies = []                      # runtime is stdlib-only, on purpose
+
+[project.optional-dependencies]
+dev = ["ruff", "pytest"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py39"
+
+[tool.ruff.lint]
+# Catch real problems (pyflakes, bugbear, simplify, pyupgrade) but DELIBERATELY
+# keep this codebase's dense, multi-statement-per-line house style: the E7xx /
+# E401 / E501 rules below would explode ~100 hand-packed lines and fight the
+# author's intent, so they stay off. Don't "fix" them.
+select = ["F", "E", "W", "B", "SIM", "UP"]
+ignore = [
+    "E701",  # multiple statements on one line (colon)   — intentional
+    "E702",  # multiple statements on one line (semicolon)— intentional
+    "E703",  # statement ends with a semicolon            — intentional
+    "E401",  # multiple imports on one line               — intentional
+    "E501",  # line too long                              — prose/print lines
+    "E741",  # ambiguous variable name (l/o)              — note bytes etc.
+    "SIM905",# split a string literal into a word list     — idiomatic here
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]          # import the top-level scripts as modules
+addopts = "-q"

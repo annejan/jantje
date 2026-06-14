@@ -8,7 +8,7 @@ default: ~3 melodic + ~3 drum voices. No ChiptuneSAK, no MIDI round-trip.
 
 Usage: midi_to_sng.py <in.mid> <out.sng> [--tempo N] [--rows-per-pat N]
 """
-import struct, sys, argparse
+import struct, argparse
 from collections import defaultdict, Counter
 
 # --- GoatTracker constants (src/gcommon.h) ---
@@ -22,7 +22,8 @@ GM_DRUM = {35:"kick",36:"kick",37:"rim",38:"snare",40:"snare",39:"clap",
 
 # ---------------------------------------------------------------------------
 def parse_midi(path):
-    d = open(path, "rb").read()
+    with open(path, "rb") as f:
+        d = f.read()
     assert d[:4] == b"MThd"
     _, ntrks, div = struct.unpack(">HHH", d[8:14])
     pos = 8 + struct.unpack(">I", d[4:8])[0]
@@ -431,7 +432,7 @@ def build_arranged(path, out, tempo, rows_per_pat, sections,
             elif br % 2 == 0:
                 gP[r] = (CLOSEDH if br % 4 == 0 else OPENH, 6)
     else:
-        for r, (prio, instr, nb) in best.items():
+        for r, (_prio, instr, nb) in best.items():
             if instr == 4:
                 gK[r] = (nb, 4)
             elif not (instr == 6 and r % hihat_div):  # thin busy hihats
@@ -554,7 +555,7 @@ def serialize_sng(out, title, tempo, grid, rows_per_pat):
     o += bytes([1])                                # 1 subtune
     for ch in range(NCH):
         ol = order[ch]
-        body = bytes(ol) + bytes([LOOP := 0xFF, 0])   # RST loop to pos 0
+        body = bytes(ol) + bytes([0xFF, 0])           # RST: loop orderlist to pos 0
         o += bytes([len(body) - 1]); o += body
     o += bytes([len(instruments)])
     for it in instruments: o += it
@@ -565,7 +566,8 @@ def serialize_sng(out, title, tempo, grid, rows_per_pat):
     o += bytes([len(patterns)])
     for pat in patterns:
         o += bytes([len(pat)//4]); o += pat
-    open(out, "wb").write(o)
+    with open(out, "wb") as f:
+        f.write(o)
     print(f"  wrote {len(o)} bytes -> {out}  ({len(patterns)} patterns, "
           f"{npat_per}/channel)")
 
