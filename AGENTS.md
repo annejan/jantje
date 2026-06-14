@@ -225,7 +225,18 @@ Trust the row formula for the trim; render `-t` a few seconds over and `ffmpeg
 **Tempo for non-dance tunes.** Notes land on a 16th grid played at the Fxx
 tempo (`06` ≈ 125 bpm); the tool does NOT read the MIDI's own tempo. A slow
 source races at `06` — Engel (~88 bpm) needed `--tempo 09`. Pick tempo ≈
-`round(50 × 60 / bpm / 4)` in hex.
+`round(50 × 60 / bpm / 4)` in hex. At 1x, integer Fxx is COARSE: bpm = `750 /
+tempo`, so only `06`=125, `05`=150, `04`=187 — nothing between.
+
+**Multispeed for fine tempo (gt2reloc `-Sxx`).** To hit tempos between the
+coarse 1x steps, pack at N× multispeed: the player runs N×50 Hz, so bpm = `750 ×
+N / tempo` and the step shrinks. `gt2reloc out.sng out.sid -S2` (2x); `-S3` etc.
+It's a **pack-time** flag, NOT stored in the `.sng`, so no tool change needed —
+just keep the `--tempo` you wrote and add `-S2`. e.g. 2x + tempo `09` = 167 bpm
+(the missing 150↔187 middle); used for Children Of The Night. Multispeed also =
+finer effect timing (vibrato/drum/arp update N× faster), and render length =
+`rows × tempo / (50 × N)`. (Verify a multispeed actually applied by checking the
+loop period, since sidplayfp's "Song Length" only echoes the `-t` cap.)
 
 ## Latest activity (resume point — cover batch)
 Churning through `sources/` cover MIDIs with the karaoke recipe, each one
@@ -234,11 +245,23 @@ User reaction "super sexy / love it". Newest renders: Op de Camping, Saturday
 Night, Kernkraft 400, Engel, Children Of The Night (see the cover batch below).
 Prior resume point: `renders/in-the-navy_8580_full.{mp3,sng}` — 3:21, 8580
 voicing, harmony interrupt-and-resume ("begint in de buurt te komen").
-Open quality gap surfaced by the batch: aux percussion (tambourine GM 54, etc.)
-is dropped by `GM_DRUM` — extending it would thicken shaker-driven beats.
+Also added since: Children Of The Night (2x multispeed ≈167 bpm), Human Behaviour
+(Björk — timpani fills the vocal gaps, jingle-bell drives the kit).
+
+**`GM_DRUM` now maps aux percussion** (was a quality gap): shakers/tambourine/
+maracas/cabasa/rides/triangles/jingle/castanets (54,69,70,73,75,80-85,…) → hihat;
+china/splash/2nd-crash/long-guiro (52,55,57,74) → openhat. Two deliberate
+choices, both to protect the groove: (1) splash 55 AND crash2 57 → openhat NOT
+crash (crash wins its row + fires a multi-row swell → dozens = a wall of swells,
+e.g. Ibiza gm57×79); (2) the hand-drum family (congas/bongos/timbales/woodblock
+60-66,76,77) is left UNMAPPED — `tom` (prio 3) outranks `hihat` (prio 2), so
+mapping them deletes the offbeat groove in conga-heavy files (Rasputin would go
+hat 457→0). Adversarially reviewed (workflow) before landing.
 
 ## Dance-cover batch (approved by ear — exact recipes)
 All from `sources/` (git-ignored). Each `.sng`/`.sid`/`.mp3` in `renders/`.
+**Good MIDI source: <https://midis101.com/>** — large, searchable, clean karaoke
+& GM files (most of this batch came from there).
 - **Sandstorm** — flat 16-bar loop → `--arrange darude --four-on-floor`, map
   `8,4,-`. The `--arrange`/`--four-on-floor` knobs were *built for this*: the
   cprato loop has everything on from bar 0 (no build) and only ~16 hats/16 bars
@@ -274,6 +297,13 @@ All from `sources/` (git-ignored). Each `.sng`/`.sid`/`.mp3` in `renders/`.
 - The older `What Is Love.MID` (2010 GM, ch5 "Melody"=thin sax) is a weaker
   source than the `Haddaway_-_…` karaoke one; prefer karaoke MIDIs with a clear
   vocal track.
+- **Children Of The Night** (euro-trance) — vocal = ch4 **MELODY**, ch5 pizzicato
+  octave-arp fills the gaps. Tempo too coarse at 1x → packed **2x multispeed**
+  (`-S2`) at `--tempo 09` ≈ 167 bpm.
+- **Human Behaviour** (Björk) — vocal = ch4 **Vocals-Bjork**; `--map 4,1,- --mode
+  clean --fill 2 --tempo 08`. The signature **Timpani** (ch2) fills her rest holes
+  (it literally answers each phrase); the kit is driven by the **Jingle Bell**
+  (GM 83) now that GM_DRUM maps it.
 - **Recurring karaoke recipe**: vocal = the *labelled* lead channel, `--mode
   clean`, `--fill <riff channel>` for the signature hook in the vocal's holes.
   Lands a clear vocal + floor beat + hook on 3 mono voices nearly every time.

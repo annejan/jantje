@@ -18,7 +18,22 @@ MAX_PATTROWS = 128
 
 GM_DRUM = {35:"kick",36:"kick",37:"rim",38:"snare",40:"snare",39:"clap",
            42:"hihat",44:"hihat",46:"openhat",49:"crash",51:"ride",
-           41:"tom",43:"tom",45:"tom",47:"tom",48:"tom",50:"tom"}
+           41:"tom",43:"tom",45:"tom",47:"tom",48:"tom",50:"tom",
+           # aux percussion -> nearest SID drum so the GROOVE isn't dropped:
+           # shakers/tambourine/maracas/cabasa/rides/triangles drive the offbeat
+           # (→hihat); china/splash/2nd-crash/long-guiro are open accents (→openhat).
+           # TWO deliberate NON-obvious choices, both to avoid drowning the groove:
+           #  - splash 55 AND crash2 57 → openhat, NOT crash. 'crash' wins its row
+           #    and fires a slow noise SWELL that blanks hats for ~5 rows; these can
+           #    fire dozens of times (Ibiza's gm57 ×79), so routing them to crash =
+           #    a wall of swells. Only the real crash (49) stays → crash.
+           #  - the hand-drum family (congas/bongos/timbales/woodblock 60-66,76,77)
+           #    is left UNMAPPED: 'tom' (prio 3) outranks 'hihat' (prio 2), so when
+           #    congas play in unison with the hats (Rasputin & friends) tom would
+           #    delete the entire offbeat groove. Dropping them = no regression.
+           52:"openhat",53:"hihat",54:"hihat",55:"openhat",56:"hihat",57:"openhat",
+           59:"hihat",69:"hihat",70:"hihat",73:"hihat",74:"openhat",75:"hihat",
+           80:"hihat",81:"hihat",82:"hihat",83:"hihat",84:"hihat",85:"hihat"}
 
 # ---------------------------------------------------------------------------
 def parse_midi(path):

@@ -180,22 +180,35 @@ python3 midi_to_sng.py "sources/rammsteinengel.mid" renders/engel.sng \
   --map 4,2,- --mode clean --fill 9 --tempo 09 --title "Engel"
 
 # Children Of The Night (euro-trance) — lead = ch4 "MELODY", pizzicato octave-arp
-# (ch5) fills the gaps; snare buildups auto-become risers
+# (ch5) fills the gaps. Packed at 2x multispeed for ~167 bpm (see gt2reloc -S2 below)
 python3 midi_to_sng.py "sources/Children-Of-The-Night.mid" renders/children_of_the_night.sng \
-  --map 4,2,- --mode clean --fill 5 --title "Children Of The Night"
+  --map 4,2,- --mode clean --fill 5 --tempo 09 --title "Children Of The Night"
+
+# Human Behaviour (Björk) — lead = ch4 "Vocals-Bjork"; the signature Timpani (ch2)
+# fills her rest holes; jingle-bell kit; ~92 bpm
+python3 midi_to_sng.py "sources/Bjork_Human_Behavior.mid" renders/human_behaviour.sng \
+  --map 4,1,- --mode clean --fill 2 --tempo 08 --title "Human Behaviour"
 ```
+
+Most of these MIDIs came from **[midis101.com](https://midis101.com/)** — a big,
+searchable bank of clean karaoke / GM files. Drop your finds in `sources/`.
 
 Export each `.sng` to a playable `.sid` (and capture an `.mp3`):
 
 ```sh
 ( cd /path/to/goattracker2-Qt/src && qt/build/gt2reloc out.sng out.sid )
-# Render length = total_rows × tempo ÷ 50 s (PAL) — printed rows × the Fxx tempo.
+# Render length = total_rows × tempo ÷ (50 × multispeed) s (PAL).
 # (sidplayfp's "Song Length" just echoes the -t cap for these GT sids; trust the rows.)
 sidplayfp -w/tmp/o.wav -t<LEN+5> out.sid
 ffmpeg -y -t <LEN> -i /tmp/o.wav \
   -af "afade=t=in:st=0:d=0.08,afade=t=out:st=<LEN-2>:d=2.0,loudnorm=I=-14:TP=-1.5:LRA=11" \
   -codec:a libmp3lame -b:a 320k out.mp3
 ```
+
+**Fine tempo via multispeed.** 1× `--tempo` (Fxx) is coarse — bpm = `750 / tempo`,
+so only 125 / 150 / 187, nothing between. Pack at N× with `gt2reloc … -S2` (or
+`-S3`) and the player runs N×50 Hz: bpm = `750 × N / tempo`. So `--tempo 09 … -S2`
+= 167 bpm (the missing middle). Multispeed also gives finer effect timing.
 
 ## Lessons baked in (the hard way)
 
@@ -218,9 +231,12 @@ ffmpeg -y -t <LEN> -i /tmp/o.wav \
 - **Set `--tempo` for non-dance tunes.** Everything plays on a 16th grid at the
   Fxx tempo (default `06` ≈ 125 bpm); a slow source (e.g. Engel ~88 bpm) needs
   `--tempo 09` or it races. The tool doesn't read the MIDI's own tempo.
-- **The drum map is GM kick/snare/hat/clap/tom/crash only.** Aux percussion
-  (tambourine GM 54, shaker, cowbell, …) is dropped — on shaker-driven tracks
-  (Kernkraft, Saturday Night) the offbeat thins out. Extending `GM_DRUM` is a TODO.
+- **Aux percussion drives the groove → route it, carefully.** `GM_DRUM` maps
+  shakers/tambourine/jingle/rides/triangles → hihat and china/splash/2nd-crash →
+  openhat (NOT crash: crash wins its row + fires a multi-row swell, so dozens =
+  a wall of noise). The conga/bongo/timbale/woodblock family is left UNMAPPED on
+  purpose — `tom` (prio 3) outranks `hihat` (prio 2), so mapping it deletes the
+  offbeat groove in conga-heavy files.
 - **gt2reloc is single-SID only** — 6-voice renders are for editor audition, not
   `.sid` export.
 - **8580 vs 6581 voicing**, auto-wah bass, pitch-drop kicks — see `AGENTS.md`.

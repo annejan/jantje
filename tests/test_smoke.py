@@ -172,6 +172,25 @@ def test_midi_inspect_finds_named_tracks(midi_file):
     assert melody["prog"][0] == 73        # the Flute program we wrote
 
 
+def test_gm_drum_maps_aux_percussion_without_drowning_the_groove():
+    """Aux percussion (tambourine 54, shaker 82, …) must route to a SID drum so
+    the groove isn't dropped — without the two failure modes the build's priority
+    model creates: a 'crash' wall-of-swells, and 'tom' deleting the hat groove."""
+    # every value must be a drum the full-kit paths (build/build_stereo) know,
+    # else `name not in drumdef` silently drops it
+    known = {"kick", "snare", "clap", "rim", "hihat", "openhat", "ride", "tom", "crash"}
+    assert set(m.GM_DRUM.values()) <= known, "GM_DRUM maps to an unknown drum name"
+    assert m.GM_DRUM[54] == "hihat" and m.GM_DRUM[82] == "hihat"   # tambourine/shaker offbeat
+    # splash 55 + crash2 57 are open accents, NOT crash: crash (prio 6) wins its
+    # row and fires a multi-row swell, so dozens of them = a wall of noise.
+    assert m.GM_DRUM[55] == "openhat" and m.GM_DRUM[57] == "openhat"
+    assert 49 in m.GM_DRUM and m.GM_DRUM[49] == "crash"            # only the real crash swells
+    # the hand-drum family is left UNMAPPED on purpose: tom (prio 3) outranks
+    # hihat (prio 2), so congas-in-unison-with-hats would delete the offbeat groove.
+    for n in (*range(60, 67), 76, 77):
+        assert n not in m.GM_DRUM, f"GM {n} (hand drum) would route to tom and outrank the hats"
+
+
 def test_note_byte_clamps_into_sid_range():
     for midi_pitch in (0, 24, 60, 96, 127):
         b = m.note_byte(midi_pitch)
