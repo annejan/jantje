@@ -54,6 +54,11 @@ python3 midi_to_sng.py  "/home/annejan/Projects/martin/assets/Village People In 
   (This is the "chord-derived arpeggios (real tones, not fixed intervals)" TODO —
   the Harmony *instrument*'s wavetable arp is a FIXED root/+7/+12 shape; this is
   the real per-chord version, on the fill voice.)
+- `--tempo-map BAR:HH,…` a GENRE JOURNEY in one song: drops a `CMD_SETTEMPO`
+  (Fxx) at each 0-based bar so the tempo morphs mid-track (hex; lower = faster).
+  Use at 1x (no `-S`) so the hex maps straight to bpm = `750/HH`. Friet 2030:
+  `0:08,16:06,32:05,56:04,80:03` = polka 94 → disco 125 → hard 150 → hardcore 187
+  → speedcore 250. Rides the same per-row `effects` map the smooth riser uses.
 - `--fill CHAN[,CHAN…]` (combined-MIDI mode) counter-melody from these channels
   (1-based, priority pool: first listed wins) into the lead's *long* holes only
   (≥ half a bar). **Now the recommended way to keep a signature riff** once the

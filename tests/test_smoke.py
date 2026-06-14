@@ -227,6 +227,23 @@ def test_build_arranged_presets(midi_file, tmp_path, preset):
     _assert_valid_sng(out)
 
 
+def test_parse_tempo_map():
+    assert m.parse_tempo_map("0:07,24:05,48:04") == [(0, 7), (24, 5), (48, 4)]
+
+
+def test_build_tempo_map_journey(midi_file, tmp_path):
+    """--tempo-map drops CMD_SETTEMPO at bar boundaries -> a genre journey in one
+    song; the .sng must differ from the flat-tempo build and stay well-formed."""
+    flat = tmp_path / "flat.sng"
+    m.build(midi_file, str(flat), tempo=6, rows_per_pat=64, mode="clean",
+            chmap="1,2,-", title="T")
+    journey = tmp_path / "journey.sng"
+    m.build(midi_file, str(journey), tempo=7, rows_per_pat=64, mode="clean",
+            chmap="1,2,-", title="T", tempo_map=[(0, 7), (4, 5), (6, 4)])
+    _assert_valid_sng(journey)
+    assert journey.read_bytes() != flat.read_bytes()
+
+
 def test_parse_arrange_spec():
     secs = m.parse_arrange("8:khr,16:khbl")
     assert secs[0] == (8, {"k", "h"}, True)

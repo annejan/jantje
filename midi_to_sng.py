@@ -112,7 +112,7 @@ def load_stem(path):
 
 def build(path, out, tempo, rows_per_pat, hihat_div=2, mode="shared", chmap=None,
           kick_bass=False, fill=None, stems=None, title="In The Navy",
-          intro_fill=True, arp_fill=False):
+          intro_fill=True, arp_fill=False, tempo_map=None):
     if stems:
         # Build from deliberately-chosen named stem files (one part each, all on
         # the same aligned grid) instead of guessing channels in a combined MIDI.
@@ -429,6 +429,19 @@ def build(path, out, tempo, rows_per_pat, hihat_div=2, mode="shared", chmap=None
     if riser_runs:
         print(f"  rolls: {len(riser_runs)} snare buildup(s) -> smooth gliding risers")
 
+    # ----- genre journey: switch the Fxx tempo at bar boundaries -----
+    # One song that morphs through tempos (polka -> dance -> gritty -> hardcore).
+    # Each entry drops a CMD_SETTEMPO on ch0 at that 0-based bar. Bar 0 is the base
+    # `tempo` (serialize forces ch0/row0), so map it from bar 1+.
+    if tempo_map:
+        zones = []
+        for bar, t in tempo_map:
+            r = bar * 16                              # 16 rows per bar (16th grid)
+            if 0 < r < total_rows:
+                effects[(0, r)] = (0xF, t)            # CMD_SETTEMPO
+                zones.append(f"bar{bar}=F{t:02X}")
+        print(f"  tempo map: {tempo} -> {' '.join(zones)}")
+
     serialize_sng(out, title, tempo, grid, rows_per_pat, effects)
 
 
@@ -463,6 +476,16 @@ def parse_arrange(spec):
         out.append((int(bars_s),
                     set(c for c in layers if c in "khbl"),
                     "r" in layers))
+    return out
+
+
+def parse_tempo_map(spec):
+    """'0:07,24:05,48:04' -> [(bar, tempo_hex), ...] — a genre journey: the Fxx
+    tempo switches at each 0-based bar boundary (tempo hex; lower = faster)."""
+    out = []
+    for tok in spec.split(","):
+        bar_s, t_s = tok.split(":")
+        out.append((int(bar_s), int(t_s, 16)))
     return out
 
 def build_arranged(path, out, tempo, rows_per_pat, sections,
@@ -792,6 +815,11 @@ if __name__ == "__main__":
                          "tones (one per row) instead of freezing on one note — "
                          "fixes chord-heavy intros/interludes that sound wrong as a "
                          "single held note. Mono fills are unaffected")
+    ap.add_argument("--tempo-map", default=None, metavar="BAR:HH,...",
+                    help="GENRE JOURNEY: switch the Fxx tempo at these 0-based bar "
+                         "boundaries (hex; lower = faster). e.g. 0:07,24:05,48:04 "
+                         "ramps slow->fast across one song. Use at 1x (no -S "
+                         "multispeed) so the hex values map straight to tempo")
     ap.add_argument("--fill", default=None,
                     type=lambda x: [t.strip() for t in x.split(",")],
                     metavar="SRC[,SRC...]",
@@ -844,4 +872,5 @@ if __name__ == "__main__":
                                    ("harm", a.harm), ("drums", a.drums)) if v}
         build(a.inp, a.out, a.tempo, a.rows_per_pat, a.hihat_div, a.mode, a.map,
               a.kick_bass, a.fill, stems or None, a.title,
-              intro_fill=not a.no_intro_fill, arp_fill=a.arp_fill)
+              intro_fill=not a.no_intro_fill, arp_fill=a.arp_fill,
+              tempo_map=parse_tempo_map(a.tempo_map) if a.tempo_map else None)
