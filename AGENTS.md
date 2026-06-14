@@ -215,13 +215,27 @@ ffmpeg -y -ss <START> -t <SONGLEN> -i /tmp/cap.wav \
   -af "afade=t=in:st=0:d=0.08,afade=t=out:st=<SONGLEN-2>:d=2.0,loudnorm=I=-14:TP=-1.5:LRA=11" \
   -codec:a libmp3lame -b:a 320k renders/out.mp3
 ```
-Song length ≈ `total_rows × tempo_ticks ÷ 50` s (PAL). Snapshot the matching
-`.sng` next to each render for reproducibility.
+Song length = `total_rows × tempo ÷ 50` s (PAL) — the printed rows × the Fxx
+tempo. **`sidplayfp`'s reported "Song Length" is NOT reliable here**: these
+GT-packed sids carry no songlengths DB, so it just echoes the `-t` cap you pass.
+Trust the row formula for the trim; render `-t` a few seconds over and `ffmpeg
+-t <LEN>` to the computed length. Snapshot the generate command in a
+`renders/<name>.cmd` next to each render for reproducibility.
 
-## Latest render (resume point — In The Navy)
-`renders/in-the-navy_8580_full.{mp3,sng}` — full 3:21, 8580 voicing, harmony
-interrupt-and-resume. User: "begint in de buurt te komen". Mix is close; harmony
-no longer drops out, only minimally choppy.
+**Tempo for non-dance tunes.** Notes land on a 16th grid played at the Fxx
+tempo (`06` ≈ 125 bpm); the tool does NOT read the MIDI's own tempo. A slow
+source races at `06` — Engel (~88 bpm) needed `--tempo 09`. Pick tempo ≈
+`round(50 × 60 / bpm / 4)` in hex.
+
+## Latest activity (resume point — cover batch)
+Churning through `sources/` cover MIDIs with the karaoke recipe, each one
+packed to a single-SID `.sid` + 320k `.mp3` with a `renders/<name>.cmd` snapshot.
+User reaction "super sexy / love it". Newest renders: Op de Camping, Saturday
+Night, Kernkraft 400, Engel, Children Of The Night (see the cover batch below).
+Prior resume point: `renders/in-the-navy_8580_full.{mp3,sng}` — 3:21, 8580
+voicing, harmony interrupt-and-resume ("begint in de buurt te komen").
+Open quality gap surfaced by the batch: aux percussion (tambourine GM 54, etc.)
+is dropped by `GM_DRUM` — extending it would thicken shaker-driven beats.
 
 ## Dance-cover batch (approved by ear — exact recipes)
 All from `sources/` (git-ignored). Each `.sng`/`.sid`/`.mp3` in `renders/`.
@@ -240,9 +254,29 @@ All from `sources/` (git-ignored). Each `.sng`/`.sid`/`.mp3` in `renders/`.
   --mode clean --fill 8,6` — the **Whistle** (ch8) pan-flute hook wins the gaps,
   the **Flute** (ch6) fills the rest. Whistle is very high (clamps into the SID
   top octave); fine here. User: "nice .. keep it".
+- **Op de Camping** (Ome Henk) — IS *In The Navy* (Village People): same tune.
+  Built from the real In The Navy GM sequence (`martin/assets/Village People In
+  The Navy.mid`) `--map 1,5,3 --mode shared --kick-bass`, retitled. The standalone
+  `op-de-camping.mid` has **no drums** — don't use it.
+- **Saturday Night** (Whigfield) — karaoke; vocal = ch4 **Melody**. `--map 4,5,-
+  --mode clean --fill 3` — the ch3 organ chord-stab hook fills the vocal holes.
+- **Kernkraft 400** (Zombie Nation) — the tune is Whittaker's C64 *Lazy Jones*,
+  coming home. ch1 Saw Lead is the **authentic interleaved bass-pulse+melody arp**
+  (one channel, like the original SID); no real harmony channel (ch5 "strings" is
+  a low pedal). `--map 1,4,- --mode clean`. NOTE: its big offbeat is a tambourine
+  (GM 54) → dropped by the kit map, so the beat is kick+clap only.
+- **Engel** (Rammstein) — SLOW (~88 bpm) → `--tempo 09`. Vocal = ch4 "Bass+Lead";
+  `--map 4,2,- --mode clean --fill 9` drops the high **Whistle** hook (ch9) into
+  the vocal holes (clamps into the SID top octave — fittingly ghostly).
+- **Children Of The Night** (euro-trance) — vocal = ch4 **MELODY** (Tenor Sax).
+  `--map 4,2,- --mode clean --fill 5` — the ch5 **pizzicato octave-arp** fills the
+  gaps; the source's snare buildups auto-convert to risers (7 of them).
 - The older `What Is Love.MID` (2010 GM, ch5 "Melody"=thin sax) is a weaker
   source than the `Haddaway_-_…` karaoke one; prefer karaoke MIDIs with a clear
   vocal track.
+- **Recurring karaoke recipe**: vocal = the *labelled* lead channel, `--mode
+  clean`, `--fill <riff channel>` for the signature hook in the vocal's holes.
+  Lands a clear vocal + floor beat + hook on 3 mono voices nearly every time.
 
 ## Freed From Desire (friet) — WORK IN PROGRESS (resume here)
 Building from the **named stems** in `/home/annejan/Projects/friet/midi/` and

@@ -159,13 +159,42 @@ S=/path/to/friet/stems
 python3 midi_to_sng.py renders/freed-from-desire.sng \
   --lead $S/vocal.mid --bass $S/bass.mid --harm $S/organ_stab.mid --drums $S/drumkit.mid \
   --mode shared --kick-bass --fill $S/na_na_hook.mid --title "Friet met Desire"
+
+# Op de Camping (Ome Henk) == In The Navy (Village People) — SAME tune. Built from
+# the real In The Navy GM sequence (the camping.mid has no drums), just retitled.
+python3 midi_to_sng.py "sources/… In The Navy.mid" renders/op-de-camping.sng \
+  --map 1,5,3 --mode shared --kick-bass --title "Op de Camping"
+
+# Saturday Night (Whigfield) — karaoke; lead = ch4 "Melody", organ chord-stab (ch3) in gaps
+python3 midi_to_sng.py "sources/Wigfield_Saturday_Night.mid" renders/saturday_night.sng \
+  --map 4,5,- --mode clean --fill 3 --title "Saturday Night"
+
+# Kernkraft 400 (Zombie Nation = Whittaker's C64 'Lazy Jones') — ch1 is the authentic
+# interleaved bass-pulse+melody arp; no harmony channel, so clean lead|bass|drums
+python3 midi_to_sng.py "sources/zombie_nationkernkraft_400.mid" renders/kernkraft_400.sng \
+  --map 1,4,- --mode clean --title "Kernkraft 400"
+
+# Engel (Rammstein) — SLOW (~88 bpm) so --tempo 09; lead = ch4 vocal, the high
+# Whistle hook (ch9) fills the vocal holes
+python3 midi_to_sng.py "sources/rammsteinengel.mid" renders/engel.sng \
+  --map 4,2,- --mode clean --fill 9 --tempo 09 --title "Engel"
+
+# Children Of The Night (euro-trance) — lead = ch4 "MELODY", pizzicato octave-arp
+# (ch5) fills the gaps; snare buildups auto-become risers
+python3 midi_to_sng.py "sources/Children-Of-The-Night.mid" renders/children_of_the_night.sng \
+  --map 4,2,- --mode clean --fill 5 --title "Children Of The Night"
 ```
 
 Export each `.sng` to a playable `.sid` (and capture an `.mp3`):
 
 ```sh
 ( cd /path/to/goattracker2-Qt/src && qt/build/gt2reloc out.sng out.sid )
-sidplayfp -w/tmp/o.wav -t200 out.sid && ffmpeg -y -i /tmp/o.wav out.mp3
+# Render length = total_rows × tempo ÷ 50 s (PAL) — printed rows × the Fxx tempo.
+# (sidplayfp's "Song Length" just echoes the -t cap for these GT sids; trust the rows.)
+sidplayfp -w/tmp/o.wav -t<LEN+5> out.sid
+ffmpeg -y -t <LEN> -i /tmp/o.wav \
+  -af "afade=t=in:st=0:d=0.08,afade=t=out:st=<LEN-2>:d=2.0,loudnorm=I=-14:TP=-1.5:LRA=11" \
+  -codec:a libmp3lame -b:a 320k out.mp3
 ```
 
 ## Lessons baked in (the hard way)
@@ -186,6 +215,12 @@ sidplayfp -w/tmp/o.wav -t200 out.sid && ffmpeg -y -i /tmp/o.wav out.mp3
   elsewhere.
 - **A flat all-parts-from-bar-0 loop has no song in it** — stage it with
   `--arrange` (reveal layers) so it builds instead of starting at the climax.
+- **Set `--tempo` for non-dance tunes.** Everything plays on a 16th grid at the
+  Fxx tempo (default `06` ≈ 125 bpm); a slow source (e.g. Engel ~88 bpm) needs
+  `--tempo 09` or it races. The tool doesn't read the MIDI's own tempo.
+- **The drum map is GM kick/snare/hat/clap/tom/crash only.** Aux percussion
+  (tambourine GM 54, shaker, cowbell, …) is dropped — on shaker-driven tracks
+  (Kernkraft, Saturday Night) the offbeat thins out. Extending `GM_DRUM` is a TODO.
 - **gt2reloc is single-SID only** — 6-voice renders are for editor audition, not
   `.sid` export.
 - **8580 vs 6581 voicing**, auto-wah bass, pitch-drop kicks — see `AGENTS.md`.
