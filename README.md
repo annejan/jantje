@@ -196,6 +196,11 @@ python3 midi_to_sng.py "sources/Bjork_Human_Behavior.mid" renders/human_behaviou
 python3 midi_to_sng.py "sources/the_key_the_secret.mid" renders/the_key_the_secret.sng \
   --map 3,2,- --mode clean --fill 5,6 --kick-bass --no-intro-fill --arp-fill \
   --tempo 13 --title "The Key The Secret"
+
+# 500 Miles (The Proclaimers) — karaoke; lead = ch7 "Vocal", clean-guitar strum
+# (ch2, arp'd) fills the gaps; 132 bpm via 3x multispeed (-S3)
+python3 midi_to_sng.py "sources/Proclaimers_500_Miles.mid" renders/500_miles.sng \
+  --map 7,4,- --mode clean --fill 2 --arp-fill --no-intro-fill --tempo 17 --title "500 Miles"
 ```
 
 Most of these MIDIs came from **[midis101.com](https://midis101.com/)** — a big,
