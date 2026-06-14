@@ -4,7 +4,7 @@ Parametric **MIDI / stems → GoatTracker 2 `.sng`** arranger. Compose authentic
 3-channel mono C64 SID tunes directly from source MIDIs — no MIDI-import
 round-trip — then audition them live in the [goattracker2-Qt][gt2] editor.
 
-> Named after Jantje Smit. Because it makes songs. 🐐
+> Named after Jantje Smit. Because it makes songs and kloot fed me names like SNG-Smith . . 🐐🦙
 
 ## What's here
 
