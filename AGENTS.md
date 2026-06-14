@@ -6,7 +6,7 @@ Navy* = Ome Henk – *Op de Camping*, same tune) into authentic **3-channel mono
 SID** with translated drums, then auditioning live in the GoatTracker Qt editor.
 
 ## Files
-- `midi_to_sid.py` — the generator. MIDI → `.sng` (the main tool).
+- `midi_to_sng.py` — the generator. MIDI → `.sng` (the main tool).
 - `midi_arrange.py` — planner. Prints the proposed role/drum mapping for a MIDI
   without generating audio. Run this first when looking at a new source MIDI.
 - Source MIDIs live in **`/home/annejan/Projects/martin/assets/`** —
@@ -16,7 +16,7 @@ SID** with translated drums, then auditioning live in the GoatTracker Qt editor.
 ## Quick start
 ```sh
 python3 midi_arrange.py "/home/annejan/Projects/martin/assets/Village People In The Navy.mid"
-python3 midi_to_sid.py  "/home/annejan/Projects/martin/assets/Village People In The Navy.mid" \
+python3 midi_to_sng.py  "/home/annejan/Projects/martin/assets/Village People In The Navy.mid" \
         /home/annejan/op-de-camping.sng --mode shared
 ```
 
@@ -38,11 +38,11 @@ python3 midi_to_sid.py  "/home/annejan/Projects/martin/assets/Village People In 
   silent (see friet notes). Off by default.
 
 ### Two ways to feed it
-1. **Combined MIDI** (one file, parts on separate channels): `midi_to_sid.py in.mid out.sng [--map …]`.
+1. **Combined MIDI** (one file, parts on separate channels): `midi_to_sng.py in.mid out.sng [--map …]`.
    Without `--map`, voices are auto-assigned by **average pitch** (low=bass,
    high=lead, mid=harmony). Drums = MIDI channel 10 (GM kit); see `GM_DRUM`.
 2. **Named stem files** (the clean way — one isolated part per file, all on the
-   same grid): `midi_to_sid.py out.sng --lead vocal.mid --bass bass.mid
+   same grid): `midi_to_sng.py out.sng --lead vocal.mid --bass bass.mid
    --harm organ_stab.mid --drums drumkit.mid`. No channel-guessing; you pick
    each stem deliberately. This is preferred when stems exist.
 
@@ -102,7 +102,7 @@ MAX_INSTR 64, MAX_TABLES 4. Note byte = FIRSTNOTE + (midi - 24), octave-clamped.
   silence (`sr` sustain nibble 0). One SID master volume → balance voices by
   envelope/sustain level, not a per-voice volume.
 
-## Current arrangement recipe (what's in midi_to_sid.py now)
+## Current arrangement recipe (what's in midi_to_sng.py now)
 - Lead: saw + vibrato (`stbl`), sustained.
 - Bass: **saw, NO filter** (full volume) — the low-pass made it nearly inaudible.
   Instrument 1 + filter table `ftbl=1` still exists if you want it back.

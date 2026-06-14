@@ -6,7 +6,7 @@ a GoatTracker .sng directly: melodic voices placed on a 16th-note tracker grid,
 GM drums translated to SID noise/triangle drum instruments. Dual-SID (6 ch) by
 default: ~3 melodic + ~3 drum voices. No ChiptuneSAK, no MIDI round-trip.
 
-Usage: midi_to_sid.py <in.mid> <out.sng> [--tempo N] [--rows-per-pat N]
+Usage: midi_to_sng.py <in.mid> <out.sng> [--tempo N] [--rows-per-pat N]
 """
 import struct, sys, argparse
 from collections import defaultdict, Counter

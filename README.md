@@ -10,7 +10,7 @@ round-trip — then audition them live in the [goattracker2-Qt][gt2] editor.
 
 | file | what |
 | ---- | ---- |
-| `midi_to_sid.py` | the arranger: MIDI (or named stem files) → `.sng` |
+| `midi_to_sng.py` | the arranger: MIDI (or named stem files) → `.sng` |
 | `midi_arrange.py` | planner: print the proposed role/drum mapping for a MIDI |
 | `AGENTS.md` | full tooling notes, `.sng` format, SID-synth cheat-sheet, lessons |
 
@@ -24,10 +24,10 @@ No `pip`, no `mido`, no ChiptuneSAK — the MIDI parser is hand-rolled. (Optiona
 
 ```sh
 # from one combined MIDI (parts on separate channels)
-python3 midi_to_sid.py song.mid out.sng --map 4,2,3 --kick-bass
+python3 midi_to_sng.py song.mid out.sng --map 4,2,3 --kick-bass
 
 # or from deliberately chosen, isolated stem files (the clean way)
-python3 midi_to_sid.py out.sng \
+python3 midi_to_sng.py out.sng \
   --lead vocal.mid --bass bass.mid --harm organ_stab.mid --drums drumkit.mid \
   --mode shared --kick-bass
 ```
