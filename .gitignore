@@ -1,0 +1,14 @@
+# Rendered audio / exports — regenerate from the tools, don't track
+renders/
+*.mp3
+*.wav
+*.sid
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Editor working files
+*.sng.bak
