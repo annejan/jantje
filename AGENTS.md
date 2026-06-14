@@ -9,6 +9,11 @@ SID** with translated drums, then auditioning live in the GoatTracker Qt editor.
 - `midi_to_sng.py` — the generator. MIDI → `.sng` (the main tool).
 - `midi_arrange.py` — planner. Prints the proposed role/drum mapping for a MIDI
   without generating audio. Run this first when looking at a new source MIDI.
+- `midi_inspect.py` — track lister. `midi_inspect.py song.mid` prints each
+  track's name + GM program + note count (find the *labelled* vocal channel);
+  `--channel N` dumps that channel's busiest bar as note names to confirm a hook.
+- `tests/test_smoke.py` — synthesizes a tiny MIDI and drives every build path;
+  `pytest` (config in `pyproject.toml`). Lint with `ruff check .`. CI runs both.
 - Source MIDIs live in **`/home/annejan/Projects/martin/assets/`** —
   **do NOT write there** (it's the user's real project). Output goes elsewhere
   (the working `.sng`, currently `/home/annejan/op-de-camping.sng`).
@@ -68,50 +73,15 @@ python3 midi_to_sng.py  "/home/annejan/Projects/martin/assets/Village People In 
 ### Identifying the vocal/lead channel (do this before `--map`)
 `midi_arrange.py` guesses roles by average pitch — wrong for karaoke/GM files
 where the vocal sits mid-stack. The vocal is the channel *labelled* the melody,
-so read the track names + GM programs first:
+so read the track names + GM programs first with `midi_inspect.py`:
 ```sh
-python3 - "song.mid" <<'PY'
-import struct,sys
-d=open(sys.argv[1],"rb").read()
-_,ntrk,div=struct.unpack(">HHH",d[8:14]); pos=8+struct.unpack(">I",d[4:8])[0]
-def vlq(p):
-    v=0
-    while True:
-        b=d[p];p+=1;v=(v<<7)|(b&0x7f)
-        if not b&0x80: break
-    return v,p
-ti=0
-while pos<len(d)-8:
-    if d[pos:pos+4]!=b'MTrk': pos+=1; continue
-    tl=struct.unpack(">I",d[pos+4:pos+8])[0]; p=pos+8; end=p+tl; run=None
-    name=""; prog={}; chans=set(); nn=0
-    while p<end:
-        dt,p=vlq(p)
-        if p>=end: break
-        st=d[p]
-        if st&0x80: p+=1; run=st
-        else: st=run
-        hi,ch=st&0xf0, st&0x0f
-        if st==0xff:
-            mt=d[p]; p+=1; ml,p=vlq(p)
-            if mt in (1,3,4): name+=d[p:p+ml].decode('latin1','ignore')+" "
-            p+=ml
-        elif st in (0xf0,0xf7): sl,p=vlq(p); p+=sl
-        else:
-            nd=1 if hi in (0xc0,0xd0) else 2
-            if hi==0xc0: prog[ch]=d[p]
-            if hi==0x90 and d[p+1]>0: chans.add(ch); nn+=1
-            p+=nd
-    if name.strip() or chans:
-        print(f"trk{ti:2} ch{sorted(c+1 for c in chans)} prog{ {c+1:prog[c] for c in prog} } n={nn} '{name.strip()}'")
-    ti+=1; pos=end
-PY
+python3 midi_inspect.py song.mid              # name / GM program / notes per track
+python3 midi_inspect.py song.mid --channel 5  # dump ch5's busiest bar as note names
 ```
 A track named `CANTO`/`Melody`/`Vocal` or a lead patch (Sax/Flute/Lead) is the
 lead — not the highest channel. Worked for What Is Love (`CANTO`=ch4, *not* the
-organ ch1) and Ibiza (Flute=ch5 = the karaoke vocal). To confirm a channel
-carries the hook, dump its densest 4-bar block as note names and eyeball the
-phrase shape.
+organ ch1) and Ibiza (Flute=ch5 = the karaoke vocal). `--channel N` dumps the
+densest 4-bar block so you can eyeball the phrase shape and confirm the hook.
 
 ## Live audition loop (the whole point — iterate by ear)
 The editor has a JSON-RPC stdin/stdout interface. Drive a **visible** instance
@@ -266,6 +236,10 @@ All from `sources/` (git-ignored). Each `.sng`/`.sid`/`.mp3` in `renders/`.
 - **Going to Ibiza** — karaoke MIDI; the vocal is the **Flute** (ch5). `--map
   5,2,- --mode clean --fill 1` — the ch1 brass "whoa-oh" hook fills the vocal's
   rest holes. User picked the `--fill` version over riff-on-its-own-voice.
+- **All That She Wants** — karaoke MIDI; vocal = ch5 **Melody**. `--map 5,2,-
+  --mode clean --fill 8,6` — the **Whistle** (ch8) pan-flute hook wins the gaps,
+  the **Flute** (ch6) fills the rest. Whistle is very high (clamps into the SID
+  top octave); fine here. User: "nice .. keep it".
 - The older `What Is Love.MID` (2010 GM, ch5 "Melody"=thin sax) is a weaker
   source than the `Haddaway_-_…` karaoke one; prefer karaoke MIDIs with a clear
   vocal track.
@@ -318,6 +292,22 @@ Open TODOs (user feedback, newest first):
 - **Prefer named stem files over channel-guessing** when stems exist (the friet
   redo uses them; In The Navy still uses a combined MIDI + `--map`).
 - Goal vibe: a rough, fun **C64 demo** soundtrack.
+
+## Dev tooling (lint / tests / CI)
+- **Runtime stays stdlib-only** — the tools below are dev-only (`pip install -e
+  ".[dev]"` → ruff + pytest; config in `pyproject.toml`).
+- **ruff**, NOT black. The codebase is intentionally dense (multi-statement
+  lines via `;`/`:`). Ruff selects F/E/W/B/SIM/UP but **ignores E701/E702/E703/
+  E401/E501** (and SIM905/E741) to preserve that style — only real problems are
+  flagged. Do NOT reformat with black/`ruff format`; it explodes ~100 lines.
+- **Tests**: `tests/test_smoke.py` hand-writes a minimal SMF in-memory and drives
+  `build` (clean + `--fill`), `build_arranged` (both presets, `--four-on-floor`),
+  `build_stereo` (combined `@N`), `parse_arrange`, `note_byte`, and
+  `midi_inspect`. They assert a well-formed GTS5 `.sng` (magic + size) — *not*
+  how it sounds (the agent can't hear; that's still the live-audition loop).
+- **CI**: `.github/workflows/ci.yml` runs `ruff check` + `pytest` on Py
+  3.9/3.11/3.13. `.pre-commit-config.yaml` mirrors it locally.
+- When you add a knob/build path, add a smoke test for it and keep ruff green.
 
 ## Open next steps (user-requested directions)
 - Chord-derived arpeggios (real chord tones, not fixed intervals).

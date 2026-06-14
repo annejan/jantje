@@ -12,6 +12,7 @@ round-trip — then audition them live in the [goattracker2-Qt][gt2] editor.
 | ---- | ---- |
 | `midi_to_sng.py` | the arranger: MIDI (or named stem files) → `.sng` |
 | `midi_arrange.py` | planner: print the proposed role/drum mapping for a MIDI |
+| `midi_inspect.py` | list a MIDI's tracks (name/GM-program/notes) to find the vocal |
 | `AGENTS.md` | full tooling notes, `.sng` format, SID-synth cheat-sheet, lessons |
 
 ## Install
@@ -36,15 +37,13 @@ python3 midi_to_sng.py out.sng \
 
 `midi_arrange.py` ranks channels by pitch and *guesses* roles — fine for clean
 dance MIDIs, wrong for karaoke/GM files where the vocal is buried mid-stack.
-Before mapping, read the **track names and GM programs**, because the channel
-you want is the one literally labelled the melody:
+Before mapping, read the **track names and GM programs** with `midi_inspect.py`,
+because the channel you want is the one literally labelled the melody:
 
 ```sh
-# print track name + program (GM patch) per channel
-python3 - "song.mid" <<'PY'
-import struct,sys
-... # (see AGENTS.md "Identifying the vocal/lead channel" for the snippet)
-PY
+python3 midi_inspect.py song.mid             # list tracks: name / GM patch / notes
+python3 midi_inspect.py song.mid --channel 5 # dump ch5's busiest bar as note names
+                                             #   (eyeball it to confirm the hook)
 ```
 
 A track named `CANTO` / `Melody` / `Vocal` (or a lead-register patch like Sax,
@@ -143,6 +142,10 @@ python3 midi_to_sng.py "sources/Haddaway ….mid" renders/what_is_love.sng \
 # Going to Ibiza — karaoke MIDI; lead = the Flute (the vocal), brass hook in the gaps
 python3 midi_to_sng.py "sources/VENGA BOYS ….mid" renders/ibiza.sng \
   --map 5,2,- --mode clean --fill 1 --title "Going to Ibiza"
+
+# All That She Wants — karaoke MIDI; lead = ch5 Melody, whistle+flute hook in the gaps
+python3 midi_to_sng.py "sources/… All That She Wants.MID" renders/all_that_she_wants.sng \
+  --map 5,2,- --mode clean --fill 8,6 --title "All That She Wants"
 ```
 
 Export each `.sng` to a playable `.sid` (and capture an `.mp3`):
@@ -173,6 +176,25 @@ sidplayfp -w/tmp/o.wav -t200 out.sid && ffmpeg -y -i /tmp/o.wav out.mp3
 - **gt2reloc is single-SID only** — 6-voice renders are for editor audition, not
   `.sid` export.
 - **8580 vs 6581 voicing**, auto-wah bass, pitch-drop kicks — see `AGENTS.md`.
+
+## Development
+
+Runtime is stdlib-only; the dev tooling (lint + tests) is optional:
+
+```sh
+python3 -m venv .venv && . .venv/bin/activate
+pip install -e ".[dev]"        # ruff + pytest
+ruff check .                   # lint  (config in pyproject.toml)
+pytest                         # smoke tests (synthesize a tiny MIDI, drive every build path)
+```
+
+[GitHub Actions](.github/workflows/ci.yml) runs `ruff check` + `pytest` on
+Python 3.9/3.11/3.13 for every push and PR. A `.pre-commit-config.yaml` mirrors
+both if you want them on `git commit` (`pip install pre-commit && pre-commit install`).
+
+The code is deliberately **dense** (multiple statements per line); ruff is
+configured to keep that style (E7xx/E401/E501 off) and only flag real problems
+(pyflakes, bugbear, simplify, pyupgrade). Don't reformat with black.
 
 ## Related
 
