@@ -61,6 +61,10 @@ python3 midi_to_sng.py sandstorm.mid out.sng --map 8,4,- --arrange darude
 
 Pass a custom `BARS:LAYERS,...` spec instead of a preset name for any shape.
 
+Add `--four-on-floor` when the source kit is too thin for a dance floor (some
+loops hold only ~1 hat/bar): it ignores the source drums and lays a canonical
+house groove — kick on every beat, clap on 2 & 4, open hat on every offbeat.
+
 See `AGENTS.md` for every knob (`--mode`, `--map`, `--kick-bass`, `--fill`,
 `--tempo`, `--title`, …) and the live-audition RPC loop.
 

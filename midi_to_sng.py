@@ -364,7 +364,7 @@ def parse_arrange(spec):
     return out
 
 def build_arranged(path, out, tempo, rows_per_pat, sections,
-                   hihat_div=2, chmap=None, title="Arranged"):
+                   hihat_div=2, chmap=None, title="Arranged", four_floor=False):
     div, end_tick, notes, drums = parse_midi(path)
     if chmap:
         def pick(tok):
@@ -414,11 +414,27 @@ def build_arranged(path, out, tempo, rows_per_pat, sections,
             best[r] = (prio, instr, nb)
     gK = [(REST, 0)] * base_rows                      # kick layer
     gP = [(REST, 0)] * base_rows                      # snare/hat/tom layer
-    for r, (prio, instr, nb) in best.items():
-        if instr == 4:
-            gK[r] = (nb, 4)
-        elif not (instr == 6 and r % hihat_div):      # thin busy hihats
-            gP[r] = (nb, instr)
+    if four_floor:
+        # The source kit is too sparse for a dance floor (here 16 bars hold
+        # ~16 hats). Ignore it and lay down a canonical house groove on the
+        # 16-row bar: kick on every beat (0,4,8,12), clap on 2 & 4 (4,12),
+        # open hat on every offbeat 8th, closed hat on the down 8ths.
+        KICK, CLAP = note_byte(36), note_byte(60)
+        OPENH, CLOSEDH = note_byte(74), note_byte(72)
+        for r in range(base_rows):
+            br = r % ROWS_PER_BAR
+            if br % 4 == 0:
+                gK[r] = (KICK, 4)
+            if br in (4, 12):
+                gP[r] = (CLAP, 5)
+            elif br % 2 == 0:
+                gP[r] = (CLOSEDH if br % 4 == 0 else OPENH, 6)
+    else:
+        for r, (prio, instr, nb) in best.items():
+            if instr == 4:
+                gK[r] = (nb, 4)
+            elif not (instr == 6 and r % hihat_div):  # thin busy hihats
+                gP[r] = (nb, instr)
 
     def riser_bar(seg, lo):                           # climbing noise -> a build
         for k in range(ROWS_PER_BAR):
@@ -657,6 +673,10 @@ if __name__ == "__main__":
                          "'BARS:LAYERS,...' where LAYERS subset khbl (k=kick "
                          "h=hat/snare b=bass l=lead) + optional r = riser on the "
                          "last bar, e.g. 8:k,8:khr,16:khbl")
+    ap.add_argument("--four-on-floor", action="store_true",
+                    help="(with --arrange) replace the sparse source kit with a "
+                         "canonical dance groove: kick every beat, clap on 2&4, "
+                         "open hat on every offbeat")
     ap.add_argument("--voice", action="append", default=[], metavar="CH=ROLE=FILE",
                     help="OPT-IN dual-SID: assign a stem to a SID voice. CH 1-6 "
                          "(1-3=SID1, 4-6=SID2), ROLE lead|bass|harm|counter|pad|"
@@ -665,7 +685,8 @@ if __name__ == "__main__":
     a = ap.parse_args()
     if a.arrange:                     # stage a flat loop into build/drop sections
         build_arranged(a.inp, a.out, a.tempo, a.rows_per_pat,
-                       parse_arrange(a.arrange), a.hihat_div, a.map, a.title)
+                       parse_arrange(a.arrange), a.hihat_div, a.map, a.title,
+                       a.four_on_floor)
     elif a.voice:                     # opt-in dual-SID; default path is mono
         voices = []
         for v in a.voice:
