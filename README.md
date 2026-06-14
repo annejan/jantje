@@ -188,6 +188,11 @@ python3 midi_to_sng.py "sources/Children-Of-The-Night.mid" renders/children_of_t
 # fills her rest holes; jingle-bell kit; ~92 bpm
 python3 midi_to_sng.py "sources/Bjork_Human_Behavior.mid" renders/human_behaviour.sng \
   --map 4,1,- --mode clean --fill 2 --tempo 08 --title "Human Behaviour"
+
+# The Key, The Secret (Urban Cookie Collective) — lead = ch3 "Leadvocal"; synth
+# topline (ch5) + piano (ch6) fill the gaps. House ~136 bpm via 2x (gt2reloc -S2)
+python3 midi_to_sng.py "sources/the_key_the_secret.mid" renders/the_key_the_secret.sng \
+  --map 3,2,- --mode clean --fill 5,6 --tempo 11 --title "The Key The Secret"
 ```
 
 Most of these MIDIs came from **[midis101.com](https://midis101.com/)** — a big,
