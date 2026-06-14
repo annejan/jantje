@@ -12,3 +12,7 @@ venv/
 
 # Editor working files
 *.sng.bak
+
+# Source material — drop your MIDIs / stems / .prg / .sid here (not tracked)
+sources/*
+!sources/.gitkeep

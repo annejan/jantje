@@ -52,7 +52,7 @@ See `AGENTS.md` for every knob (`--mode`, `--map`, `--kick-bass`, `--fill`,
 
 - **[goattracker2-Qt][gt2]** — the Qt editor this drives (live `--rpc`, an MCP
   bridge, `gt2reloc` for `.sid`/`.prg` export, `sid2sng` for `.sid` → `.sng`).
-- Renders, source MIDIs and stems are **not** in this repo (regenerate them);
-  `renders/` is git-ignored.
+- Drop your own MIDIs / stems / `.prg` / `.sid` in **`sources/`** (git-ignored).
+- Renders are **not** tracked either — regenerate them; `renders/` is git-ignored.
 
 [gt2]: https://codeberg.org/Ranzbak/goattracker2-Qt

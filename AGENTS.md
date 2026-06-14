@@ -126,6 +126,36 @@ CLI: `cd src && qt/build/gt2reloc your.sng out.sid` (run from `src/` so the
 relocator finds player.s). Earlier this died with "COULD NOT OPEN PLAYROUTINE"
 because upstream's Qt port shipped an empty `datafile[]` stub.
 
+## Recovering a .sng from a GoatTracker .sid (reverse — hard-won)
+A GT-exported `.sid`/`.prg` embeds the song data verbatim, so exact recovery is
+possible — but `qt/build/sid2sng` is a heuristic that must be told which pack
+optimisations were used:
+
+- **Flag lottery.** 5 bool flags (`-nopulse -nofilter -noinstrvib -fixedparams
+  -nowavedelay`) = 32 combos; the wrong combo shifts the read pointer and you
+  get a *remix* (plausible but wrong notes), or `ERROR: speed table`. Brute-force
+  all 32, keep the ones that parse AND re-pack (`gt2reloc`) cleanly.
+- **Verify by BYTE-DIFF, not by ear.** Re-pack each candidate, align both `.sid`s
+  on the freq-table signature (`08 09 09 0a 0a 0b 0c 0d …`), diff from there.
+  Exclude pure *relocation* diffs: a newer player is N bytes bigger, so pointer
+  lo-bytes differ by `-N` and page-crossing hi-bytes by `±1`. **NON-reloc diffs
+  == 0 ⇒ byte-faithful song data.** For Dippy's *Satellite One* the faithful
+  combo was **`-fixedparams -nowavedelay`** (0 non-reloc diffs).
+- **Audio xcorr is misleading.** Identical data played by a *different player
+  version* drifts in micro-timing → sample cross-correlation ≈ 0 even though the
+  notes are identical. Trust the byte-diff. A bit-identical round-trip `.sid`
+  would need the song's *original* player version (usually unavailable).
+- **Multispeed?** Search the `.prg`/`.sid` for the CIA speed-code
+  `A2 xx 8E 04 DC  A2 xx 8E 05 DC` ($dc04/$dc05 timer). Absent ⇒ packed at 1×;
+  the editor "speed multiplier" won't add back missing notes.
+- **Don't "fix" sid2sng's speed-table parse leniently.** Its leading-0 / extend
+  logic is load-bearing; making it lenient *truncates* the speed table (cost me
+  the only 2 wrong bytes in an otherwise-perfect recover).
+- **ChiptuneSAK `.sid` import** (the editor's `load_song` on a `.sid`) is a lossy
+  6502-emulation reconstruction AND fails *silently* if the module isn't
+  importable — it keeps the previous song and only updates the path. Always
+  verify the load actually changed the buffer (songname/songlen/a pattern dump).
+
 ## Rendering an MP3 (the agent can't hear — capture live editor audio)
 For a quick listen you can also `sidplayfp -w out.wav out.sid`. To capture the
 editor's exact libresidfp output, record its monitor:
