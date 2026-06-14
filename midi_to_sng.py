@@ -356,15 +356,15 @@ def build(path, out, tempo, rows_per_pat, hihat_div=2, mode="shared", chmap=None
             runs.append(cur); cur = []
         cur.append(r)
     if cur: runs.append(cur)
-    rolls = 0
-    for run in runs:
-        if len(run) >= 8:
-            rolls += 1
-            for k, r in enumerate(run):
-                pit = 40 + int(48 * k / (len(run) - 1))   # climb ~4 octaves
-                best[r] = (best[r][0], 5, note_byte(pit))
-    if rolls:
-        print(f"  rolls: {rolls} snare buildup(s) turned into rising noise risers")
+    # Long snare/clap rolls (eurodance pre-drop buildups) are rendered as ONE
+    # smooth gliding riser per run (placed AFTER the kit, below) instead of a wall
+    # of re-triggered climbing notes. Take their rows out of the per-row drum map
+    # so place_drums leaves the channel clear for the riser to own.
+    effects = {}                                       # {(ch, row): (cmd, param)}
+    riser_runs = [run for run in runs if len(run) >= 8]
+    for run in riser_runs:
+        for r in run:
+            best.pop(r, None)
 
     def place_drums(chan, rows):
         # Place the given row->(prio,instr,nb) drums on a melodic channel with
@@ -414,7 +414,22 @@ def build(path, out, tempo, rows_per_pat, hihat_div=2, mode="shared", chmap=None
               f"(kick={placed[4]} snare={placed[5]} hihat={placed[6]} tom={placed[7]}, "
               f"hihat/{hihat_div})")
 
-    serialize_sng(out, title, tempo, grid, rows_per_pat)
+    # ----- smooth rising risers (after the kit, so they own their rows) -----
+    # ONE held note on the sustained-noise Riser instrument, glided UP in pitch by
+    # a portamento-up command each row (speed-table 2 = an "auto" semitone ramp).
+    # No per-note re-gate, so it reads as a continuous whoosh, not a machine-gun.
+    RISER_INSTR = 11
+    for run in riser_runs:
+        r0, rend = run[0], run[-1]
+        grid[drum_ch][r0] = (note_byte(38), RISER_INSTR)      # low start, gate on
+        for r in range(r0, min(rend + 1, total_rows)):
+            effects[(drum_ch, r)] = (1, 2)                    # CMD_PORTAUP, speed-tbl 2
+        if rend + 1 < total_rows and grid[drum_ch][rend + 1][0] == REST:
+            grid[drum_ch][rend + 1] = (KEYOFF, 0)             # release after the run
+    if riser_runs:
+        print(f"  rolls: {len(riser_runs)} snare buildup(s) -> smooth gliding risers")
+
+    serialize_sng(out, title, tempo, grid, rows_per_pat, effects)
 
 
 # ---------------------------------------------------------------------------
@@ -562,9 +577,12 @@ def build_arranged(path, out, tempo, rows_per_pat, sections,
     serialize_sng(out, title, tempo, [out0, out1, out2], rows_per_pat)
 
 
-def serialize_sng(out, title, tempo, grid, rows_per_pat):
+def serialize_sng(out, title, tempo, grid, rows_per_pat, effects=None):
     """Write the grid (3 or 6 channels) + the shared instrument/table bank to a
-    GTS5 .sng. 6 channels auto-load as dual-SID stereo in the editor."""
+    GTS5 .sng. 6 channels auto-load as dual-SID stereo in the editor.
+    effects: optional {(ch, row): (cmd, param)} of per-row GoatTracker commands
+    (e.g. toneportamento for the smooth riser); the tempo on row 0/ch 0 wins."""
+    effects = effects or {}
     NCH = len(grid)
     total_rows = len(grid[0])
     # ----- patterns + orderlists -----
@@ -579,7 +597,10 @@ def serialize_sng(out, title, tempo, grid, rows_per_pat):
             for i in range(P):
                 r = pi * P + i
                 note, instr = grid[ch][r] if r < total_rows else (REST, 0)
-                cmd, param = (0xF, tempo) if (ch == 0 and r == 0) else (0, 0)
+                if ch == 0 and r == 0:
+                    cmd, param = 0xF, tempo
+                else:
+                    cmd, param = effects.get((ch, r), (0, 0))
                 rows += bytes([note, instr, cmd, param])
             rows += bytes([ENDPATT, 0, 0, 0])      # endmark row
             patterns.append(rows)
@@ -612,9 +633,11 @@ def serialize_sng(out, title, tempo, grid, rows_per_pat):
     ft_r = [0x40 | (1 << bass_sid), 0x70, 0x02, 0xFE, 0x03,  # res $4 + route, cutoff $70, +2/tick, -2/tick, loop to sweep-up
             0x40 | (1 << swell_sid), 0x10, 0x07,   # res $4 + route v3, cutoff $10 -> +7/tick
             0x00, 0x00]                            # then clear routing (mask 0) so it lets go of v3
-    # SPEED table: gentle vibrato for the lead
-    st_l = [0x03]
-    st_r = [0x20]
+    # SPEED table: 1 = gentle vibrato for the lead. 2 = RISER glide — used as a
+    # portamento-up speed: hi >= $80 selects "auto" mode (add one-semitone-freq
+    # >> R per tick), so the riser ramps a steady ~quarter-semitone/tick upward.
+    st_l = [0x03, 0x80]
+    st_r = [0x20, 0x02]
 
     def ins(ad, sr, wtbl, fw, name, ptbl=0, ftbl=0, stbl=0, vibdelay=0):
         nm = name.encode("latin1")[:16]; nm += b"\x00" * (16 - len(nm))
@@ -630,6 +653,7 @@ def serialize_sng(out, title, tempo, grid, rows_per_pat):
         ins(0xA9, 0x00, 5, 0x81, "Swell", ftbl=6),                # slow-attack noise + opening filter sweep
         ins(0x09, 0x89, 7, 0x41, "Fill", ptbl=1),                 # pulse counter-melody (fills lead rests)
         ins(0x2A, 0xA8, 3, 0x11, "Pad", stbl=1, vibdelay=0x20),   # slow triangle pad (SID2 sustains)
+        ins(0x4A, 0xFA, 0, 0x81, "Riser"),                        # sustained noise, glides up via portamento (#11)
     ]
 
     # ----- serialize .sng -----

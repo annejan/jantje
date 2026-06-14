@@ -224,7 +224,10 @@ so only 125 / 150 / 187, nothing between. Pack at N× with `gt2reloc … -S2` (o
   sharing with the harmony kills the harmony. The fixes: kick on the bass
   channel (four-on-the-floor doubles as low end), and "interrupt-and-resume" —
   a drum blips for one row, the melodic note re-asserts the next row.
-- **Snare rolls → rising noise risers** instead of a machine-gun C-3.
+- **Snare rolls → ONE smooth gliding riser** — a single held note on a sustained-
+  noise instrument, pitched up by a portamento command, instead of N re-triggered
+  climbing notes (which machine-gun: a fresh ADSR attack per note). Per-row
+  GoatTracker commands ride a small `effects` map the serializer reads.
 - **Crash → a real swell** (slow-attack noise + a filter table that ramps the
   cutoff up, then clears its own routing so it lets go of the voice).
 - **Don't cram a counter-melody onto a busy voice** — only fill a voice across

@@ -178,6 +178,37 @@ def test_build_arp_fill_chord(tmp_path):
     assert arped.read_bytes() != held.read_bytes(), "arp-fill changed nothing on a chord"
 
 
+def _roll_midi(div=96):
+    """A lead + bass + a 16-step 16th-note snare roll on ch10 (>=8 consecutive ->
+    triggers the smooth gliding-riser path)."""
+    lead, bass, drums = [], [], []
+    for bar in range(4):
+        base = bar * 4 * div
+        for beat in range(4):
+            t = base + beat * div
+            lead.append((div // 2 if t else 0, 0x90, 72, 100))
+            lead.append((div // 2, 0x80, 72, 0))
+            bass.append((div // 2 if t else 0, 0x91, 36, 100))
+            bass.append((div // 2, 0x81, 36, 0))
+    for i in range(16):                              # a one-bar 16th-note snare roll
+        drums.append((0 if i == 0 else div // 4, 0x99, 38, 100))
+        drums.append((div // 4, 0x89, 38, 0))
+    hdr = b"MThd" + struct.pack(">IHHH", 6, 1, 3, div)
+    return (hdr + _track(lead, name="Melody", ch=0) + _track(bass, name="Bass", ch=1)
+            + _track(drums, name="Drums", ch=9))
+
+
+def test_build_riser_smooth(tmp_path):
+    """A long snare roll becomes ONE gliding riser note + a portamento-up command,
+    not N re-triggered notes. Drive the path and assert a well-formed .sng."""
+    p = tmp_path / "roll.mid"
+    p.write_bytes(_roll_midi())
+    out = tmp_path / "riser.sng"
+    m.build(str(p), str(out), tempo=6, rows_per_pat=64,
+            mode="clean", chmap="1,2,-", title="T")
+    _assert_valid_sng(out)
+
+
 def test_build_no_intro_fill(midi_file, tmp_path):
     """--no-intro-fill (intro_fill=False) skips tiling the bass riff into a thin
     intro — used when the source has a deliberate sparse build before the drop."""
