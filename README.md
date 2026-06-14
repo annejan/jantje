@@ -201,6 +201,11 @@ python3 midi_to_sng.py "sources/the_key_the_secret.mid" renders/the_key_the_secr
 # (ch2, arp'd) fills the gaps; 132 bpm via 3x multispeed (-S3)
 python3 midi_to_sng.py "sources/Proclaimers_500_Miles.mid" renders/500_miles.sng \
   --map 7,4,- --mode clean --fill 2 --arp-fill --no-intro-fill --tempo 17 --title "500 Miles"
+
+# Today (Smashing Pumpkins) — karaoke; lead = ch4 "vocals", the clean-guitar intro
+# riff (ch1) fills the gaps (incl. the riff-only intro); ~90 bpm via 3x (-S3)
+python3 midi_to_sng.py "sources/Smashing_Pumpkins_Today.mid" renders/today.sng \
+  --map 4,3,- --mode clean --fill 1 --no-intro-fill --tempo 19 --title "Today"
 ```
 
 Most of these MIDIs came from **[midis101.com](https://midis101.com/)** — a big,
