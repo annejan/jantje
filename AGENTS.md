@@ -39,6 +39,12 @@ python3 midi_to_sng.py  "/home/annejan/Projects/martin/assets/Village People In 
   rests + thickens low end); snare/hat stay on the harmony channel. Thickens a
   sparse mix but the kick-blip adds **grit** to the bass — skip it when the bass
   can have its own clean voice (`--mode clean`, drums on their own channel).
+- `--no-intro-fill` skip tiling the bass riff backward into a thin intro. By
+  default, when the bass enters late, its first 2 bars are tiled back to fill the
+  low-register hole. Turn it OFF when the source has a **deliberate sparse
+  build-up** before the bass drops (a dance anthem) — filling it erases the build
+  and the bass-drop loses its punch. The Key, The Secret: bass enters bar 14 after
+  a building intro → `--no-intro-fill` restores the build → DROP → breakdown.
 - `--fill CHAN[,CHAN…]` (combined-MIDI mode) counter-melody from these channels
   (1-based, priority pool: first listed wins) into the lead's *long* holes only
   (≥ half a bar). **Now the recommended way to keep a signature riff** once the

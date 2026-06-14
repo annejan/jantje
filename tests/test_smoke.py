@@ -139,6 +139,15 @@ def test_build_stem_fill_from_file(tmp_path):
         "stem --fill placed no notes (the rescaled hook never reached the grid)"
 
 
+def test_build_no_intro_fill(midi_file, tmp_path):
+    """--no-intro-fill (intro_fill=False) skips tiling the bass riff into a thin
+    intro — used when the source has a deliberate sparse build before the drop."""
+    out = tmp_path / "nointro.sng"
+    m.build(midi_file, str(out), tempo=6, rows_per_pat=64,
+            mode="clean", chmap="1,2,-", intro_fill=False, title="T")
+    _assert_valid_sng(out)
+
+
 @pytest.mark.parametrize("preset", ["darude", "darude-build"])
 def test_build_arranged_presets(midi_file, tmp_path, preset):
     out = tmp_path / f"{preset}.sng"

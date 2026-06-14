@@ -111,7 +111,8 @@ def load_stem(path):
 
 
 def build(path, out, tempo, rows_per_pat, hihat_div=2, mode="shared", chmap=None,
-          kick_bass=False, fill=None, stems=None, title="In The Navy"):
+          kick_bass=False, fill=None, stems=None, title="In The Navy",
+          intro_fill=True):
     if stems:
         # Build from deliberately-chosen named stem files (one part each, all on
         # the same aligned grid) instead of guessing channels in a combined MIDI.
@@ -253,7 +254,11 @@ def build(path, out, tempo, rows_per_pat, hihat_div=2, mode="shared", chmap=None
     # intro drives; the four-on-the-floor kick is placed afterwards and blips
     # through it (with resume), giving riff + kick together. Hands off when the
     # real bass enters.
-    if bass_ch is not None:
+    #
+    # OFF (`--no-intro-fill`) when the source has a DELIBERATE sparse build-up
+    # before the bass drops (a dance anthem's intro): filling it erases the build
+    # and the bass "drop" loses its punch.
+    if intro_fill and bass_ch is not None:
         def first_row(ch):
             return min((int(round(s / tpr)) for s, _, _ in notes[ch]), default=0)
         intro_end = first_row(bass_ch)
@@ -736,6 +741,11 @@ if __name__ == "__main__":
     ap.add_argument("--kick-bass", action="store_true",
                     help="put the kick on the bass channel (fills its rests, "
                          "thickens low end); snare/hat stay with the harmony")
+    ap.add_argument("--no-intro-fill", action="store_true",
+                    help="don't tile the bass riff backward into a thin intro. "
+                         "Use when the source has a deliberate sparse build-up "
+                         "before the bass drops (a dance anthem) — keeps the build "
+                         "and the bass-drop's punch")
     ap.add_argument("--fill", default=None,
                     type=lambda x: [t.strip() for t in x.split(",")],
                     metavar="SRC[,SRC...]",
@@ -787,4 +797,5 @@ if __name__ == "__main__":
         stems = {k: v for k, v in (("lead", a.lead), ("bass", a.bass),
                                    ("harm", a.harm), ("drums", a.drums)) if v}
         build(a.inp, a.out, a.tempo, a.rows_per_pat, a.hihat_div, a.mode, a.map,
-              a.kick_bass, a.fill, stems or None, a.title)
+              a.kick_bass, a.fill, stems or None, a.title,
+              intro_fill=not a.no_intro_fill)
