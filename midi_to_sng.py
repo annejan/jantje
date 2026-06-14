@@ -342,7 +342,14 @@ def build(path, out, tempo, rows_per_pat, hihat_div=2, mode="shared", chmap=None
 # a section's last bar to lead into the next.
 PRESETS = {
     #          bars:layers   (r in layers = riser on the last bar)
-    "darude": "8:k,8:khr,8:khb,16:khbl,16:khbl,8:khr,16:khbl",
+    # High-energy: the bass + drums pump from bar 0 (keeps the source loop's
+    # drive), the LEAD is the only thing teased — held out for an 8-bar groove,
+    # dropped in, then pulled for one 8-bar break before slamming back. Lead is
+    # absent only ~20% of the song; everything else is full.
+    "darude": "8:khbr,16:khbl,16:khbl,8:khbr,16:khbl,16:khbl",
+    # Gentle reveal: near-silent kick-only intro that layers up slowly. Less
+    # energy, more obvious "build" — use when the loop is meant to start sparse.
+    "darude-build": "8:k,8:khr,8:khb,16:khbl,16:khbl,8:khr,16:khbl",
 }
 
 def parse_arrange(spec):
