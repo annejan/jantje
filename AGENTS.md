@@ -209,8 +209,11 @@ Open TODOs (user feedback, newest first):
   is wanted back, or keep it unfiltered.
 
 ## Constraints / decisions (don't re-litigate)
-- **3-channel mono only** — the user rejected stereo/dual-SID. No native "digi"
-  4th channel exists in the GoatTracker player; drums are SID-synth (noise/tri).
+- **Default is 3-channel mono.** Dual-SID is OPT-IN via `--voice CH=ROLE=FILE`
+  (CH 1-6, role lead|bass|harm|counter|pad|drums) → a 6-voice stereo `.sng`
+  (`build_stereo`); the editor auto-detects 6 channels on load. Without any
+  `--voice`, everything stays 3-channel mono. No native "digi" 4th channel;
+  drums are SID-synth (noise/tri).
 - **Don't cram two parts onto one busy voice** — a counter-melody jammed into the
   lead's note-gaps sounds wrong. Fill a voice only across sections where its part
   is fully silent, from a deliberately chosen stem.

@@ -32,6 +32,18 @@ python3 midi_to_sng.py out.sng \
   --mode shared --kick-bass
 ```
 
+Default is **3-channel mono**. Opt into **dual-SID (6 voices)** by assigning
+stems to voices — without `--voice` nothing changes:
+
+```sh
+python3 midi_to_sng.py out.sng \
+  --voice 1=lead=vocal.mid    --voice 2=bass=bass.mid   --voice 3=harm=organ.mid \
+  --voice 4=counter=piano.mid --voice 5=pad=strings.mid --voice 6=drums=kit.mid
+```
+
+`CH` 1-6 (1-3 = SID1, 4-6 = SID2); `ROLE` = lead|bass|harm|counter|pad|drums.
+The editor auto-detects the 6 channels on load.
+
 See `AGENTS.md` for every knob (`--mode`, `--map`, `--kick-bass`, `--fill`,
 `--tempo`, `--title`, …) and the live-audition RPC loop.
 

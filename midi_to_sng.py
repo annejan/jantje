@@ -327,6 +327,14 @@ def build(path, out, tempo, rows_per_pat, hihat_div=2, mode="shared", chmap=None
               f"(kick={placed[4]} snare={placed[5]} hihat={placed[6]} tom={placed[7]}, "
               f"hihat/{hihat_div})")
 
+    serialize_sng(out, title, tempo, grid, rows_per_pat)
+
+
+def serialize_sng(out, title, tempo, grid, rows_per_pat):
+    """Write the grid (3 or 6 channels) + the shared instrument/table bank to a
+    GTS5 .sng. 6 channels auto-load as dual-SID stereo in the editor."""
+    NCH = len(grid)
+    total_rows = len(grid[0])
     # ----- patterns + orderlists -----
     P = rows_per_pat
     npat_per = (total_rows + P - 1) // P
@@ -389,6 +397,7 @@ def build(path, out, tempo, rows_per_pat, hihat_div=2, mode="shared", chmap=None
         ins(0x0C, 0x00, 3, 0x11, "Tom"),                          # tri hit
         ins(0xA9, 0x00, 5, 0x81, "Swell", ftbl=6),                # slow-attack noise + opening filter sweep
         ins(0x09, 0x89, 7, 0x41, "Fill", ptbl=1),                 # pulse counter-melody (fills lead rests)
+        ins(0x2A, 0xA8, 3, 0x11, "Pad", stbl=1, vibdelay=0x20),   # slow triangle pad (SID2 sustains)
     ]
 
     # ----- serialize .sng -----
@@ -413,6 +422,77 @@ def build(path, out, tempo, rows_per_pat, hihat_div=2, mode="shared", chmap=None
     open(out, "wb").write(o)
     print(f"  wrote {len(o)} bytes -> {out}  ({len(patterns)} patterns, "
           f"{npat_per}/channel)")
+
+def build_stereo(out, voices, tempo, rows_per_pat, hihat_div=2, title="Stereo"):
+    """OPT-IN dual-SID. voices = list of (ch0, role, stemfile); ch 0-5 map to the
+    6 SID voices (0-2 = SID1, 3-5 = SID2). role assigns the instrument/treatment.
+    Default path stays 3-channel mono build()."""
+    ROLE_INSTR = {"lead": 1, "bass": 2, "harm": 3, "counter": 9, "pad": 10}
+    div = None; end_tick = 0; loaded = []
+    for ch, role, f in voices:
+        d, et, mel, dr = load_stem(f)
+        div = div or d; end_tick = max(end_tick, et)
+        loaded.append((ch, role, mel, dr))
+    tpr = div / 4.0
+    total_rows = int(end_tick / tpr) + 8
+    grid = [[(REST, 0) for _ in range(total_rows)] for _ in range(6)]
+    print(f"stereo (dual-SID, 6 voices): {end_tick/div/4:.0f} bars -> {total_rows} rows")
+
+    def place_voice(ch, notes, instr):
+        ev = sorted(notes)
+        for i, (start, dur, pit) in enumerate(ev):
+            r = int(round(start / tpr))
+            if not (0 <= r < total_rows): continue
+            grid[ch][r] = (note_byte(pit), instr)
+            endr = r + max(1, int(round(dur / tpr)))
+            nxt = int(round(ev[i+1][0] / tpr)) if i + 1 < len(ev) else total_rows
+            if r < endr < nxt and endr < total_rows and grid[ch][endr][0] == REST:
+                grid[ch][endr] = (KEYOFF, 0)
+
+    drumdef = {
+        "kick": (4, note_byte(36), 5), "snare": (5, note_byte(60), 4),
+        "clap": (5, note_byte(60), 4), "rim": (5, note_byte(60), 4),
+        "hihat": (6, note_byte(72), 2), "openhat": (6, note_byte(74), 2),
+        "ride": (6, note_byte(72), 2), "tom": (7, note_byte(48), 3),
+        "crash": (8, note_byte(72), 6),
+    }
+
+    def place_drums(ch, drums):
+        best = {}
+        for start, gm in drums:
+            name = GM_DRUM.get(gm)
+            if name not in drumdef: continue
+            instr, nb, prio = drumdef[name]; r = int(round(start / tpr))
+            if not (0 <= r < total_rows): continue
+            if r not in best or prio > best[r][0]: best[r] = (prio, instr, nb)
+        snare_rows = sorted(r for r, (p, i, nb) in best.items() if i == 5)
+        runs, cur = [], []
+        for r in snare_rows:
+            if cur and r - cur[-1] > 2: runs.append(cur); cur = []
+            cur.append(r)
+        if cur: runs.append(cur)
+        for run in runs:
+            if len(run) >= 8:
+                for k, r in enumerate(run):
+                    best[r] = (best[r][0], 5, note_byte(40 + int(48 * k / (len(run) - 1))))
+        cnt = Counter(); swell_until = -1
+        for r in sorted(best):
+            prio, instr, nb = best[r]
+            if instr == 6 and (r % hihat_div) != 0: continue
+            if instr == 6 and r <= swell_until: continue
+            grid[ch][r] = (nb, instr); cnt[instr] += 1
+            if instr == 8: swell_until = r + 5
+        return sum(cnt.values())
+
+    for ch, role, mel, dr in loaded:
+        if role == "drums":
+            n = place_drums(ch, dr); print(f"  v{ch+1} drums: {n} hits")
+        elif role in ROLE_INSTR:
+            place_voice(ch, mel, ROLE_INSTR[role]); print(f"  v{ch+1} {role}: {len(mel)} notes")
+        else:
+            print(f"  v{ch+1} UNKNOWN role '{role}' — skipped")
+    serialize_sng(out, title, tempo, grid, rows_per_pat)
+
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
@@ -442,8 +522,20 @@ if __name__ == "__main__":
     ap.add_argument("--harm", help="stem file for the harmony voice")
     ap.add_argument("--drums", help="stem file for the drum kit")
     ap.add_argument("--title", default="In The Navy", help="song name in the .sng/.sid")
+    ap.add_argument("--voice", action="append", default=[], metavar="CH=ROLE=FILE",
+                    help="OPT-IN dual-SID: assign a stem to a SID voice. CH 1-6 "
+                         "(1-3=SID1, 4-6=SID2), ROLE lead|bass|harm|counter|pad|"
+                         "drums. Repeatable. Any --voice -> 6-channel stereo .sng; "
+                         "without it everything stays 3-channel mono.")
     a = ap.parse_args()
-    stems = {k: v for k, v in (("lead", a.lead), ("bass", a.bass),
-                               ("harm", a.harm), ("drums", a.drums)) if v}
-    build(a.inp, a.out, a.tempo, a.rows_per_pat, a.hihat_div, a.mode, a.map,
-          a.kick_bass, a.fill, stems or None, a.title)
+    if a.voice:                       # opt-in dual-SID; default path is mono
+        voices = []
+        for v in a.voice:
+            ch, role, f = v.split("=", 2)
+            voices.append((int(ch) - 1, role.strip().lower(), f))
+        build_stereo(a.out, voices, a.tempo, a.rows_per_pat, a.hihat_div, a.title)
+    else:
+        stems = {k: v for k, v in (("lead", a.lead), ("bass", a.bass),
+                                   ("harm", a.harm), ("drums", a.drums)) if v}
+        build(a.inp, a.out, a.tempo, a.rows_per_pat, a.hihat_div, a.mode, a.map,
+              a.kick_bass, a.fill, stems or None, a.title)
