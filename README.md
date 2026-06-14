@@ -32,17 +32,72 @@ python3 midi_to_sng.py out.sng \
   --mode shared --kick-bass
 ```
 
-Default is **3-channel mono**. Opt into **dual-SID (6 voices)** by assigning
-stems to voices — without `--voice` nothing changes:
+### Finding the right channels (do this first)
+
+`midi_arrange.py` ranks channels by pitch and *guesses* roles — fine for clean
+dance MIDIs, wrong for karaoke/GM files where the vocal is buried mid-stack.
+Before mapping, read the **track names and GM programs**, because the channel
+you want is the one literally labelled the melody:
 
 ```sh
+# print track name + program (GM patch) per channel
+python3 - "song.mid" <<'PY'
+import struct,sys
+... # (see AGENTS.md "Identifying the vocal/lead channel" for the snippet)
+PY
+```
+
+A track named `CANTO` / `Melody` / `Vocal` (or a lead-register patch like Sax,
+Flute, Lead) is your lead — *not* whichever channel sits highest. This is how
+What Is Love (lead = `CANTO`, not the organ) and Ibiza (lead = the Flute, the
+karaoke vocal) got mapped right.
+
+### The reliable mono recipe
+
+For a karaoke/GM dance track, the layout that consistently lands a clear vocal +
+a floor beat with no grit is: **lead = vocal, clean bass, drums on their own
+voice** (drop the busy comp/riff so the kit isn't squeezed):
+
+```sh
+python3 midi_to_sng.py song.mid out.sng --map VOCAL,BASS,- --mode clean
+# clean mode: lead | bass | drums — bass keeps its own voice (no kick blip = no
+# grit), the kit gets a full channel (kick+snare+hat) instead of fighting a comp.
+```
+
+Miss the signature riff once the comp is gone? Drop it into the **vocal's rest
+holes** with `--fill` (priority pool of 1-based channels, first listed wins) —
+the riff plays the instrumental gaps, the vocal owns the choruses:
+
+```sh
+python3 midi_to_sng.py song.mid out.sng --map VOCAL,BASS,- --mode clean --fill RIFF
+```
+
+### Dual-SID (6 voices) — audition only
+
+Opt into **dual-SID** by assigning parts to voices. From isolated stems, or
+`@N` to pull channel N (1-based) straight from the combined input MIDI (`@`
+alone = its GM drum kit). Drum roles `kick|snare|hihat|perc` each take one kit
+subset onto their own voice, so the whole kit sounds at once:
+
+```sh
+# from stems
 python3 midi_to_sng.py out.sng \
   --voice 1=lead=vocal.mid    --voice 2=bass=bass.mid   --voice 3=harm=organ.mid \
   --voice 4=counter=piano.mid --voice 5=pad=strings.mid --voice 6=drums=kit.mid
+
+# straight from one combined MIDI (kit split across SID2)
+python3 midi_to_sng.py song.mid out.sng \
+  --voice 1=lead=@4 --voice 2=bass=@2 --voice 3=harm=@1 \
+  --voice 4=kick=@  --voice 5=snare=@ --voice 6=hihat=@
 ```
 
-`CH` 1-6 (1-3 = SID1, 4-6 = SID2); `ROLE` = lead|bass|harm|counter|pad|drums.
-The editor auto-detects the 6 channels on load.
+`CH` 1-6 (1-3 = SID1, 4-6 = SID2); `ROLE` = lead|bass|harm|counter|pad|drums|
+kick|snare|hihat|perc. The editor auto-detects the 6 channels on load.
+
+> ⚠️ **6-voice `.sng` is audition-only.** The bundled `gt2reloc` only emits
+> **single-SID** PSID, so exporting to `.sid`/`.mp3` keeps just the first 3
+> voices (drums on SID2 get dropped). For a playable file use the 3-voice mono
+> path; use dual-SID for live audition in the Qt editor.
 
 ### Staging a flat loop into build/drop (`--arrange`)
 
@@ -68,6 +123,35 @@ house groove — kick on every beat, clap on 2 & 4, open hat on every offbeat.
 See `AGENTS.md` for every knob (`--mode`, `--map`, `--kick-bass`, `--fill`,
 `--tempo`, `--title`, …) and the live-audition RPC loop.
 
+## Cookbook (the exact commands that worked)
+
+Sources are git-ignored — drop your own `.mid` in `sources/` and re-run.
+
+```sh
+# Sandstorm — a flat 16-bar loop, staged into a build/drop with a synth beat
+python3 midi_to_sng.py "sources/Sandstorm ….mid" renders/sandstorm.sng \
+  --map 8,4,- --arrange darude --four-on-floor --title "Sandstorm"
+
+# Dance Monkey — combined MIDI, classic 3-voice with kick on the bass
+python3 midi_to_sng.py "sources/… Dance Monkey ….mid" renders/dance_monkey.sng \
+  --map 1,3,9 --kick-bass --title "Dance Monkey"
+
+# What Is Love — karaoke MIDI; lead = the CANTO vocal track (ch4), not the organ
+python3 midi_to_sng.py "sources/Haddaway ….mid" renders/what_is_love.sng \
+  --map 4,2,- --mode clean --title "What Is Love"
+
+# Going to Ibiza — karaoke MIDI; lead = the Flute (the vocal), brass hook in the gaps
+python3 midi_to_sng.py "sources/VENGA BOYS ….mid" renders/ibiza.sng \
+  --map 5,2,- --mode clean --fill 1 --title "Going to Ibiza"
+```
+
+Export each `.sng` to a playable `.sid` (and capture an `.mp3`):
+
+```sh
+( cd /path/to/goattracker2-Qt/src && qt/build/gt2reloc out.sng out.sid )
+sidplayfp -w/tmp/o.wav -t200 out.sid && ffmpeg -y -i /tmp/o.wav out.mp3
+```
+
 ## Lessons baked in (the hard way)
 
 - **4 elements, 3 mono voices.** Sharing drums with the bass kills the drums;
@@ -79,6 +163,15 @@ See `AGENTS.md` for every knob (`--mode`, `--map`, `--kick-bass`, `--fill`,
   cutoff up, then clears its own routing so it lets go of the voice).
 - **Don't cram a counter-melody onto a busy voice** — only fill a voice across
   sections where its part is fully silent.
+- **The vocal is the channel that's *labelled* the vocal**, not the highest one.
+  Read track names / GM programs before mapping a karaoke or GM file.
+- **Clean bass = no kick on it.** The kick-blip-and-resume trick thickens a
+  sparse mix but adds grit; give the bass its own voice when the kit can live
+  elsewhere.
+- **A flat all-parts-from-bar-0 loop has no song in it** — stage it with
+  `--arrange` (reveal layers) so it builds instead of starting at the climax.
+- **gt2reloc is single-SID only** — 6-voice renders are for editor audition, not
+  `.sid` export.
 - **8580 vs 6581 voicing**, auto-wah bass, pitch-drop kicks — see `AGENTS.md`.
 
 ## Related

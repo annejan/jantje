@@ -31,11 +31,23 @@ python3 midi_to_sng.py  "/home/annejan/Projects/martin/assets/Village People In 
 - `--map LEAD,BASS,HARM` force 1-based MIDI channels to roles (`-` skips one);
   beats the average-pitch guesser when a combined MIDI has many channels
 - `--kick-bass` put the four-on-the-floor kick on the bass channel (fills its
-  rests + thickens low end); snare/hat stay on the harmony channel
-- `--fill CHAN` (combined-MIDI mode) counter-melody from another channel into the
-  lead's *long* holes only — **a dead end so far**: cramming a 2nd part onto a
-  busy voice sounds wrong; only worth it on sections where the lead is FULLY
-  silent (see friet notes). Off by default.
+  rests + thickens low end); snare/hat stay on the harmony channel. Thickens a
+  sparse mix but the kick-blip adds **grit** to the bass — skip it when the bass
+  can have its own clean voice (`--mode clean`, drums on their own channel).
+- `--fill CHAN[,CHAN…]` (combined-MIDI mode) counter-melody from these channels
+  (1-based, priority pool: first listed wins) into the lead's *long* holes only
+  (≥ half a bar). **Now the recommended way to keep a signature riff** once the
+  comp is dropped: the riff plays instrumental gaps, the vocal owns the choruses
+  (e.g. Ibiza `--fill 1` = the brass hook in the flute-vocal's rests). Still
+  wrong to use on *every* little inter-note gap — it only fires on real holes.
+- `--arrange PRESET|SPEC` stage a flat all-parts-from-bar-0 loop into named
+  build/drop sections; each reveals a layer subset `khbl` (k=kick h=hat/snare
+  b=bass l=lead) + optional `r` = riser on the section's last bar. Presets:
+  `darude` (high-energy: bass+drums from bar 0, lead teased) and `darude-build`
+  (slow kick-up reveal). Custom: `8:khbr,16:khbl,…`.
+- `--four-on-floor` (with `--arrange`) ignore a too-sparse source kit and
+  synthesize a house groove: kick every beat, clap on 2&4, open hat every
+  offbeat. Use when the loop holds ~1 hat/bar.
 
 ### Two ways to feed it
 1. **Combined MIDI** (one file, parts on separate channels): `midi_to_sng.py in.mid out.sng [--map …]`.
@@ -45,6 +57,61 @@ python3 midi_to_sng.py  "/home/annejan/Projects/martin/assets/Village People In 
    same grid): `midi_to_sng.py out.sng --lead vocal.mid --bass bass.mid
    --harm organ_stab.mid --drums drumkit.mid`. No channel-guessing; you pick
    each stem deliberately. This is preferred when stems exist.
+3. **Dual-SID (6 voices), `--voice CH=ROLE=SRC`** — opt-in stereo. `SRC` is a
+   stem file or `@N` to pull channel N (1-based) from the combined input MIDI
+   (`@` alone = its GM drum kit). Roles: lead|bass|harm|counter|pad|drums and the
+   kit-split roles kick|snare|hihat|perc (each takes one GM subset onto its own
+   voice → the whole kit sounds at once). Example straight from one MIDI:
+   `--voice 1=lead=@4 --voice 2=bass=@2 --voice 3=harm=@1 --voice 4=kick=@
+   --voice 5=snare=@ --voice 6=hihat=@`. **Audition-only — see export note.**
+
+### Identifying the vocal/lead channel (do this before `--map`)
+`midi_arrange.py` guesses roles by average pitch — wrong for karaoke/GM files
+where the vocal sits mid-stack. The vocal is the channel *labelled* the melody,
+so read the track names + GM programs first:
+```sh
+python3 - "song.mid" <<'PY'
+import struct,sys
+d=open(sys.argv[1],"rb").read()
+_,ntrk,div=struct.unpack(">HHH",d[8:14]); pos=8+struct.unpack(">I",d[4:8])[0]
+def vlq(p):
+    v=0
+    while True:
+        b=d[p];p+=1;v=(v<<7)|(b&0x7f)
+        if not b&0x80: break
+    return v,p
+ti=0
+while pos<len(d)-8:
+    if d[pos:pos+4]!=b'MTrk': pos+=1; continue
+    tl=struct.unpack(">I",d[pos+4:pos+8])[0]; p=pos+8; end=p+tl; run=None
+    name=""; prog={}; chans=set(); nn=0
+    while p<end:
+        dt,p=vlq(p)
+        if p>=end: break
+        st=d[p]
+        if st&0x80: p+=1; run=st
+        else: st=run
+        hi,ch=st&0xf0, st&0x0f
+        if st==0xff:
+            mt=d[p]; p+=1; ml,p=vlq(p)
+            if mt in (1,3,4): name+=d[p:p+ml].decode('latin1','ignore')+" "
+            p+=ml
+        elif st in (0xf0,0xf7): sl,p=vlq(p); p+=sl
+        else:
+            nd=1 if hi in (0xc0,0xd0) else 2
+            if hi==0xc0: prog[ch]=d[p]
+            if hi==0x90 and d[p+1]>0: chans.add(ch); nn+=1
+            p+=nd
+    if name.strip() or chans:
+        print(f"trk{ti:2} ch{sorted(c+1 for c in chans)} prog{ {c+1:prog[c] for c in prog} } n={nn} '{name.strip()}'")
+    ti+=1; pos=end
+PY
+```
+A track named `CANTO`/`Melody`/`Vocal` or a lead patch (Sax/Flute/Lead) is the
+lead — not the highest channel. Worked for What Is Love (`CANTO`=ch4, *not* the
+organ ch1) and Ibiza (Flute=ch5 = the karaoke vocal). To confirm a channel
+carries the hook, dump its densest 4-bar block as note names and eyeball the
+phrase shape.
 
 ## Live audition loop (the whole point — iterate by ear)
 The editor has a JSON-RPC stdin/stdout interface. Drive a **visible** instance
@@ -126,6 +193,13 @@ CLI: `cd src && qt/build/gt2reloc your.sng out.sid` (run from `src/` so the
 relocator finds player.s). Earlier this died with "COULD NOT OPEN PLAYROUTINE"
 because upstream's Qt port shipped an empty `datafile[]` stub.
 
+⚠️ **gt2reloc is single-SID only** (no `-stereo`/`-2sid` flag; it emits PSID v2
+with `sid2addr=0`). A **6-voice dual-SID `.sng` exports as just its first 3
+voices** — voices 4-6 (typically the SID2 drums) are silently dropped. So
+dual-SID (`--voice`) is for **live audition in the Qt editor only**; for a
+playable `.sid`/`.mp3` use the 3-voice mono path. Verified: every dual render
+here (incl. freed-from-desire) packs to a single-SID file.
+
 ## Recovering a .sng from a GoatTracker .sid (reverse — hard-won)
 A GT-exported `.sid`/`.prg` embeds the song data verbatim, so exact recovery is
 possible — but `qt/build/sid2sng` is a heuristic that must be told which pack
@@ -179,6 +253,23 @@ Song length ≈ `total_rows × tempo_ticks ÷ 50` s (PAL). Snapshot the matching
 interrupt-and-resume. User: "begint in de buurt te komen". Mix is close; harmony
 no longer drops out, only minimally choppy.
 
+## Dance-cover batch (approved by ear — exact recipes)
+All from `sources/` (git-ignored). Each `.sng`/`.sid`/`.mp3` in `renders/`.
+- **Sandstorm** — flat 16-bar loop → `--arrange darude --four-on-floor`, map
+  `8,4,-`. The `--arrange`/`--four-on-floor` knobs were *built for this*: the
+  cprato loop has everything on from bar 0 (no build) and only ~16 hats/16 bars
+  (no floor). User: energy/beats now right.
+- **Dance Monkey** — `--map 1,3,9 --kick-bass` (combined MIDI, classic 3-voice).
+- **What Is Love** — karaoke MIDI; the vocal is the **`CANTO`** track (ch4), NOT
+  the organ. `--map 4,2,- --mode clean` (clean bass, drums own voice). Earlier
+  org-as-lead render had "no vocals"; the GM-program dump fixed it.
+- **Going to Ibiza** — karaoke MIDI; the vocal is the **Flute** (ch5). `--map
+  5,2,- --mode clean --fill 1` — the ch1 brass "whoa-oh" hook fills the vocal's
+  rest holes. User picked the `--fill` version over riff-on-its-own-voice.
+- The older `What Is Love.MID` (2010 GM, ch5 "Melody"=thin sax) is a weaker
+  source than the `Haddaway_-_…` karaoke one; prefer karaoke MIDIs with a clear
+  vocal track.
+
 ## Freed From Desire (friet) — WORK IN PROGRESS (resume here)
 Building from the **named stems** in `/home/annejan/Projects/friet/midi/` and
 especially `/home/annejan/Projects/friet/stems/` (all aligned, 120bpm, tpq=240).
@@ -209,14 +300,21 @@ Open TODOs (user feedback, newest first):
   is wanted back, or keep it unfiltered.
 
 ## Constraints / decisions (don't re-litigate)
-- **Default is 3-channel mono.** Dual-SID is OPT-IN via `--voice CH=ROLE=FILE`
-  (CH 1-6, role lead|bass|harm|counter|pad|drums) → a 6-voice stereo `.sng`
+- **Default is 3-channel mono.** Dual-SID is OPT-IN via `--voice CH=ROLE=SRC`
+  (CH 1-6; roles lead|bass|harm|counter|pad|drums|kick|snare|hihat|perc; SRC =
+  stem file or `@N`/`@` from the combined MIDI) → a 6-voice stereo `.sng`
   (`build_stereo`); the editor auto-detects 6 channels on load. Without any
   `--voice`, everything stays 3-channel mono. No native "digi" 4th channel;
-  drums are SID-synth (noise/tri).
+  drums are SID-synth (noise/tri). **Dual-SID does NOT export** (gt2reloc is
+  single-SID) — audition only.
 - **Don't cram two parts onto one busy voice** — a counter-melody jammed into the
-  lead's note-gaps sounds wrong. Fill a voice only across sections where its part
-  is fully silent, from a deliberately chosen stem.
+  lead's note-gaps sounds wrong. `--fill` only fires on the lead's *long* holes
+  (≥ half a bar), which is fine and is the Ibiza recipe; the failure mode is
+  filling *every* gap. Fill from a deliberately chosen channel/stem.
+- **For karaoke/GM dance MIDIs the winning mono layout is** lead=the *labelled*
+  vocal channel, `--mode clean` (clean bass, drums own voice), optional
+  `--fill RIFF` for the signature hook in the vocal's gaps. Channel-guessing by
+  pitch picks the wrong lead — read track names/programs first.
 - **Prefer named stem files over channel-guessing** when stems exist (the friet
   redo uses them; In The Navy still uses a combined MIDI + `--map`).
 - Goal vibe: a rough, fun **C64 demo** soundtrack.

@@ -692,11 +692,14 @@ if __name__ == "__main__":
                     help="(with --arrange) replace the sparse source kit with a "
                          "canonical dance groove: kick every beat, clap on 2&4, "
                          "open hat on every offbeat")
-    ap.add_argument("--voice", action="append", default=[], metavar="CH=ROLE=FILE",
-                    help="OPT-IN dual-SID: assign a stem to a SID voice. CH 1-6 "
-                         "(1-3=SID1, 4-6=SID2), ROLE lead|bass|harm|counter|pad|"
-                         "drums. Repeatable. Any --voice -> 6-channel stereo .sng; "
-                         "without it everything stays 3-channel mono.")
+    ap.add_argument("--voice", action="append", default=[], metavar="CH=ROLE=SRC",
+                    help="OPT-IN dual-SID: assign a part to a SID voice. CH 1-6 "
+                         "(1-3=SID1, 4-6=SID2); ROLE lead|bass|harm|counter|pad|"
+                         "drums|kick|snare|hihat|perc; SRC = a stem file or '@N' "
+                         "to pull channel N from the combined input MIDI ('@' = "
+                         "its drum kit). Repeatable. Any --voice -> 6-channel "
+                         "stereo .sng (AUDITION ONLY: gt2reloc exports single-SID, "
+                         "so .sid keeps just voices 1-3). Without it, 3-ch mono.")
     a = ap.parse_args()
     if a.arrange:                     # stage a flat loop into build/drop sections
         build_arranged(a.inp, a.out, a.tempo, a.rows_per_pat,
