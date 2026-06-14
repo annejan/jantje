@@ -64,11 +64,17 @@ python3 midi_to_sng.py song.mid out.sng --map VOCAL,BASS,- --mode clean
 ```
 
 Miss the signature riff once the comp is gone? Drop it into the **vocal's rest
-holes** with `--fill` (priority pool of 1-based channels, first listed wins) —
-the riff plays the instrumental gaps, the vocal owns the choruses:
+holes** with `--fill` (priority pool, first listed wins) — the riff plays the
+instrumental gaps, the vocal owns the choruses. Each source is **either a
+1-based MIDI channel** (from a combined input) **or a stem file path**:
 
 ```sh
+# channel out of a combined MIDI
 python3 midi_to_sng.py song.mid out.sng --map VOCAL,BASS,- --mode clean --fill RIFF
+
+# a stem file into a stem build — e.g. the "na na" hook into the vocal's holes
+python3 midi_to_sng.py out.sng --lead vocal.mid --bass bass.mid --drums kit.mid \
+  --mode shared --fill na_na_hook.mid
 ```
 
 ### Dual-SID (6 voices) — audition only
@@ -146,6 +152,13 @@ python3 midi_to_sng.py "sources/VENGA BOYS ….mid" renders/ibiza.sng \
 # All That She Wants — karaoke MIDI; lead = ch5 Melody, whistle+flute hook in the gaps
 python3 midi_to_sng.py "sources/… All That She Wants.MID" renders/all_that_she_wants.sng \
   --map 5,2,- --mode clean --fill 8,6 --title "All That She Wants"
+
+# Freed From Desire ("friet") — from named stems; na_na hook fills the vocal's
+# holes (a stem --fill), and the real bass riff is tiled back across the intro
+S=/path/to/friet/stems
+python3 midi_to_sng.py renders/freed-from-desire.sng \
+  --lead $S/vocal.mid --bass $S/bass.mid --harm $S/organ_stab.mid --drums $S/drumkit.mid \
+  --mode shared --kick-bass --fill $S/na_na_hook.mid --title "Friet met Desire"
 ```
 
 Export each `.sng` to a playable `.sid` (and capture an `.mp3`):

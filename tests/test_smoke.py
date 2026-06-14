@@ -34,6 +34,26 @@ def _track(events, name=None, program=None, ch=0):
     return b"MTrk" + struct.pack(">I", len(body)) + bytes(body)
 
 
+def make_solo(div=96, bars=8, active=None, ch=0, pitch=72, name="Solo"):
+    """A 1-track SMF holding ONE isolated melodic part (the clean-stem shape:
+    load_stem merges a file's channels, so a stem must be a single part). `active`
+    = set of bar indices that play (None = every bar); skipped bars leave a rest
+    hole. Used to build a lead with a deliberate multi-bar hole + a dense hook."""
+    q = div
+    ev = []
+    dt = 0                                       # carries delta across rested bars
+    for bar in range(bars):
+        for beat in range(4):
+            if active is None or bar in active:
+                ev.append((dt, 0x90 | ch, pitch + (beat % 3), 100))
+                ev.append((q // 2, 0x80 | ch, pitch + (beat % 3), 0))
+                dt = q // 2
+            else:
+                dt += q                          # rest this beat
+    hdr = b"MThd" + struct.pack(">IHHH", 6, 1, 1, div)
+    return hdr + _track(ev, name=name, ch=ch)
+
+
 def make_midi(div=96, bars=8):
     """A 3-track SMF: a 'Melody' on ch1, a 'Bass' on ch2, a kick on ch10."""
     q = div                                     # one quarter note
@@ -90,6 +110,33 @@ def test_build_mono_fill(midi_file, tmp_path):
     m.build(midi_file, str(out), tempo=6, rows_per_pat=64,
             mode="clean", chmap="1,2,-", fill=[0], title="T")
     _assert_valid_sng(out)
+
+
+def test_build_stem_fill_from_file(tmp_path):
+    """--fill accepts a stem FILE, not just a channel: it's loaded, rescaled
+    onto this build's 16th grid (here 96 vs 240 tpq), and the rescaled notes
+    are placed into the lead's rest holes — the na_na_hook-into-vocal-gaps path.
+
+    The lead rests bars 1-6 (a 6-bar hole >> the half-bar MIN_GAP), so the hook
+    actually lands notes there; we assert the .sng changes vs the no-fill build
+    (filled == 0 would leave it byte-identical and silently pass)."""
+    lead = tmp_path / "lead.mid"
+    lead.write_bytes(make_solo(active={0, 7}))        # 96 tpq, isolated, bars 1-6 rest
+    bass = tmp_path / "bass.mid"
+    bass.write_bytes(make_solo(ch=1, pitch=40))       # full, low
+    hook = tmp_path / "hook.mid"
+    hook.write_bytes(make_solo(div=240, pitch=60))    # different tpq -> exercises rescale
+    stems = {"lead": str(lead), "bass": str(bass)}
+
+    nofill = tmp_path / "nofill.sng"
+    m.build(None, str(nofill), tempo=6, rows_per_pat=64, mode="shared",
+            stems=stems, title="T")
+    out = tmp_path / "stemfill.sng"
+    m.build(None, str(out), tempo=6, rows_per_pat=64, mode="shared",
+            fill=[str(hook)], stems=stems, title="T")
+    _assert_valid_sng(out)
+    assert out.read_bytes() != nofill.read_bytes(), \
+        "stem --fill placed no notes (the rescaled hook never reached the grid)"
 
 
 @pytest.mark.parametrize("preset", ["darude", "darude-build"])

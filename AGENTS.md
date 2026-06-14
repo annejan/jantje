@@ -251,27 +251,31 @@ Stem inventory: vocal (lead, bars 5-93), bass (bars 30-102!), organ_stab (hook,
 bars 2-102 but gappy), drumkit (four-on-floor), piano_comp (bars 14-85, dense),
 na_na_hook (bars 46-62), strings, sweep_pad, reverse_cymbal.
 
-Working file `/home/annejan/freed-from-desire.sng`, snapshot
-`renders/freed-from-desire_wip.{sng,cmd}`. Generate command is in the `.cmd`.
-Deliberate stem mapping (user-chosen): vocal=lead, bass=bass, organ_stab=harmony,
-drumkit=drums; `--kick-bass` on.
+Render: `renders/freed-from-desire.{sng,sid,mp3}` (3:20, single-SID, playable),
+generate command snapshot in `renders/freed-from-desire.cmd`. Deliberate stem
+mapping (user-chosen): vocal=lead, bass=bass, organ_stab=harmony, drumkit=drums;
+`--kick-bass` on; `--fill na_na_hook.mid` on (see below).
 
 What works: kick-split fills the bass channel + thickens low end; snare rolls →
 rising risers; crash → swell; the **unfiltered saw bass is good** ("tegen het
-einde lekker"); intro lays the organ root an octave down as ended notes.
+einde lekker").
 
-Open TODOs (user feedback, newest first):
-- **Empty sections / "leeg op plekken"** — bars 0-32 the bass channel is thin
-  (real bass enters bar 30; there's a drum breakdown bars 16-24). The ONLY clean
-  fill is to use a stem on a section where a voice is FULLY free — e.g. drop
-  `na_na_hook.mid` into the lead during bars ~46-62 where the vocal rests. Do NOT
-  cram a 2nd part onto a busy voice (tried; sounds wrong).
-- The very first note's instrumentation differs from when the section repeats —
-  make the intro read more like the real riff.
-- Bass audibility was the saga: triangle+lowpass = inaudible; unfiltered saw =
-  audible but "gaar" only as the intro *drone* (now ended notes). Tone is OK now.
+DONE (was open, both shipped — VERIFY BY EAR, easy to revert):
+- **Empty sections / "leeg op plekken"** → `--fill` now accepts a **stem file**,
+  so `--fill na_na_hook.mid` drops the "na na" saw hook into the vocal's rest
+  holes (≥ half-bar gaps only). Landed 43 notes into the lead holes. This is the
+  clean fix (a stem on a section where the lead is FULLY free) — NOT cramming a
+  2nd part onto a busy voice (that still sounds wrong; don't).
+- **Intro now reads like the real riff** → the thin-intro fill TILES the real
+  bass riff backward (renders the bass's first 2 bars = `PERIOD=32` rows as a
+  template on instr 2, copies `tmpl[r % PERIOD]` into the empty intro). Replaces
+  the old organ-octave-down stand-in (kept only as the no-early-bass fallback).
+  Tradeoff: the intro is now the genuine riff but the bass no longer "enters" at
+  bar 30 — if the reveal is wanted back, restore the harmony-oct-down branch.
+
+Still open:
 - Decide if a gentle bass low-pass ($D0 cutoff, res $2, `ftbl=1` still defined)
-  is wanted back, or keep it unfiltered.
+  is wanted back, or keep it unfiltered (currently unfiltered).
 
 ## Constraints / decisions (don't re-litigate)
 - **Default is 3-channel mono.** Dual-SID is OPT-IN via `--voice CH=ROLE=SRC`
@@ -285,6 +289,12 @@ Open TODOs (user feedback, newest first):
   lead's note-gaps sounds wrong. `--fill` only fires on the lead's *long* holes
   (≥ half a bar), which is fine and is the Ibiza recipe; the failure mode is
   filling *every* gap. Fill from a deliberately chosen channel/stem.
+- **`--fill` source = a 1-based MIDI channel OR a stem file path** (priority
+  pool, first listed wins). Channels read the combined input MIDI (Ibiza/ATSW);
+  a stem path is `load_stem`'d and rescaled by `div/stem_div` onto the build's
+  16th grid, then keyed by path — so a stem build can fill from any extra stem
+  (friet: `--fill na_na_hook.mid`). Ints stay 0-based when calling `build()`
+  directly (the unit test passes `fill=[0]`); the CLI takes 1-based.
 - **For karaoke/GM dance MIDIs the winning mono layout is** lead=the *labelled*
   vocal channel, `--mode clean` (clean bass, drums own voice), optional
   `--fill RIFF` for the signature hook in the vocal's gaps. Channel-guessing by

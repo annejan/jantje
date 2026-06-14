@@ -26,6 +26,8 @@ def parse_midi(path):
         d = f.read()
     assert d[:4] == b"MThd"
     _, ntrks, div = struct.unpack(">HHH", d[8:14])
+    if not div:                    # 0 PPQ = malformed header; every caller divides by div
+        raise ValueError(f"{path}: MIDI header has a zero PPQ division")
     pos = 8 + struct.unpack(">I", d[4:8])[0]
     notes = defaultdict(list)      # ch -> (start, dur, pitch)
     drums = []                     # (start, gm_note)
@@ -179,8 +181,27 @@ def build(path, out, tempo, rows_per_pat, hihat_div=2, mode="shared", chmap=None
         # where the vocal rests for a stretch) — NOT every little inter-note gap,
         # which would just cram a second part on top of the vocal. Different
         # holes want different parts (e.g. the "na na" saw hook vs the piano
-        # comp), so `fill` is a PRIORITY POOL of channels: at each row take the
+        # comp), so `fill` is a PRIORITY POOL of sources: at each row take the
         # pitch of the first listed part that's sounding.
+        #
+        # A source is EITHER a MIDI channel (0-based int / 1-based digit-string,
+        # the combined-MIDI path) OR a named stem FILE (the stem path) — so a
+        # stem build can drop e.g. na_na_hook.mid into the vocal's rest holes
+        # exactly like a channel. Stem files are loaded here and rescaled onto
+        # this build's 16th grid, then keyed by path so the loop below is uniform.
+        fill_keys = []
+        for tok in fill:
+            if isinstance(tok, int):               # already-resolved 0-based channel
+                fill_keys.append(tok)
+            elif str(tok).strip().lstrip("+-").isdigit():
+                fill_keys.append(int(str(tok)) - 1)   # 1-based channel string
+            else:                                  # a named stem file
+                key = str(tok)
+                sdiv, _et, smel, _dr = load_stem(key)
+                scale = div / sdiv                 # ticks -> this build's grid
+                notes[key] = [(s * scale, d * scale, p) for s, d, p in smel]
+                fill_keys.append(key)
+        fill = fill_keys
         MIN_GAP = 8                                # only gaps >= half a bar
         act = [None] * total_rows
         for src in reversed(fill):                 # first listed wins -> overwrite last
@@ -206,35 +227,62 @@ def build(path, out, tempo, rows_per_pat, hihat_div=2, mode="shared", chmap=None
                     elif prev is not None:
                         grid[0][k] = (KEYOFF, 0); prev = None
             r = j
+        names = [src.split("/")[-1] if isinstance(src, str) else f"ch{src+1}"
+                 for src in fill]
         print(f"  fill: {filled} counter-melody notes from "
-              f"ch{','.join(str(c+1) for c in fill)} into lead holes")
+              f"{','.join(names)} into lead holes")
 
     # ----- fatten a thin intro (BEFORE drums, so the kick punches through) -----
     # The famous hook plays for a long stretch before the real bass enters
-    # (here: bar 30). Until then, lay the harmony riff an octave down onto the
-    # bass channel so the whole intro has a driving bass-register line; the
-    # four-on-the-floor kick is placed afterwards and blips through it (with
-    # resume), giving riff + kick together. Hands off when the real bass enters.
-    if bass_ch is not None and harm_ch is not None:
+    # (here: bar 30). Fill that low-register hole on the bass channel so the
+    # intro drives; the four-on-the-floor kick is placed afterwards and blips
+    # through it (with resume), giving riff + kick together. Hands off when the
+    # real bass enters.
+    if bass_ch is not None:
         def first_row(ch):
             return min((int(round(s / tpr)) for s, _, _ in notes[ch]), default=0)
         intro_end = first_row(bass_ch)
         if intro_end > 8:
-            # Lay the harmony stabs an octave down as proper NOTES (with a
-            # keyoff at each note's end) — they ring with the bass's release
-            # tail and then stop, instead of one held drone that sounds nothing
-            # like the real bass riff that follows. (Sparser, but clean; filling
-            # the breakdown-y holes is a separate TODO.)
-            doubled = 0
-            for start, dur, pit in sorted(notes[harm_ch]):
-                r = int(round(start / tpr))
-                if 0 <= r < intro_end and grid[1][r][0] == REST:
-                    grid[1][r] = (note_byte(pit - 12), 2); doubled += 1
+            # Prefer the REAL bass riff: render its first 2 bars (the repeating
+            # riff) into a template — same instrument (2), real notes+keyoffs —
+            # and tile it backward across the intro so the intro reads as the
+            # actual riff, not a stand-in. The bass enters on a bar boundary, so
+            # `r % PERIOD` stays bar-aligned (intro_end is a multiple of PERIOD).
+            # Earlier this used the harmony stabs an octave down: a different
+            # part on the bass voice, so the first note's instrumentation read
+            # unlike the riff when the section came back. Fall back to that only
+            # when there's no real bass to template from.
+            PERIOD = 32                            # 2 bars of 16th rows
+            tmpl = [(REST, 0)] * PERIOD
+            ev = sorted(notes[bass_ch])
+            for i, (start, dur, pit) in enumerate(ev):
+                r = int(round(start / tpr)) - intro_end
+                if 0 <= r < PERIOD:
+                    tmpl[r] = (note_byte(pit), 2)
                     endr = r + max(1, int(round(dur / tpr)))
-                    if endr < intro_end and grid[1][endr][0] == REST:
-                        grid[1][endr] = (KEYOFF, 0)
-            print(f"  intro: bass riff = {doubled} notes (harmony oct down) "
-                  f"on the bass channel, rows 0..{intro_end}")
+                    nxt = (int(round(ev[i+1][0] / tpr)) - intro_end
+                           if i + 1 < len(ev) else PERIOD)
+                    if r < endr < nxt and endr < PERIOD and tmpl[endr][0] == REST:
+                        tmpl[endr] = (KEYOFF, 0)
+            riff = any(c[0] not in (REST, KEYOFF) for c in tmpl)
+            doubled = 0
+            if riff:
+                for r in range(intro_end):
+                    cell = tmpl[r % PERIOD]
+                    if cell[0] != REST and grid[1][r][0] == REST:
+                        grid[1][r] = cell; doubled += 1
+                print(f"  intro: real bass riff tiled backward = {doubled} notes "
+                      f"on the bass channel, rows 0..{intro_end} (period {PERIOD})")
+            elif harm_ch is not None:              # no early bass — organ stand-in
+                for start, dur, pit in sorted(notes[harm_ch]):
+                    r = int(round(start / tpr))
+                    if 0 <= r < intro_end and grid[1][r][0] == REST:
+                        grid[1][r] = (note_byte(pit - 12), 2); doubled += 1
+                        endr = r + max(1, int(round(dur / tpr)))
+                        if endr < intro_end and grid[1][endr][0] == REST:
+                            grid[1][endr] = (KEYOFF, 0)
+                print(f"  intro: bass riff = {doubled} notes (harmony oct down) "
+                      f"on the bass channel, rows 0..{intro_end}")
 
     # Only one drum can sound per row, so pick the
     # highest-priority hit (kick > snare/clap > hihat > tom) — the classic SID
@@ -674,11 +722,13 @@ if __name__ == "__main__":
                     help="put the kick on the bass channel (fills its rests, "
                          "thickens low end); snare/hat stay with the harmony")
     ap.add_argument("--fill", default=None,
-                    type=lambda x: [int(t) - 1 for t in x.split(",")],
-                    metavar="CHAN[,CHAN...]",
-                    help="fill the lead channel's rests from these MIDI channels "
-                         "(1-based, priority pool: first listed wins) on a soft "
-                         "instrument, e.g. the brass hook / piano comp")
+                    type=lambda x: [t.strip() for t in x.split(",")],
+                    metavar="SRC[,SRC...]",
+                    help="fill the lead channel's rests from these sources "
+                         "(priority pool: first listed wins) on a soft "
+                         "instrument, e.g. the brass hook / piano comp. Each SRC "
+                         "is a 1-based MIDI channel (combined input) OR a stem "
+                         "file path (e.g. na_na_hook.mid into the vocal's holes)")
     ap.add_argument("--lead", help="stem file for the lead voice")
     ap.add_argument("--bass", help="stem file for the bass voice")
     ap.add_argument("--harm", help="stem file for the harmony voice")
