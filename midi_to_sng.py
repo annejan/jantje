@@ -568,14 +568,25 @@ def serialize_sng(out, title, tempo, grid, rows_per_pat):
     print(f"  wrote {len(o)} bytes -> {out}  ({len(patterns)} patterns, "
           f"{npat_per}/channel)")
 
-def build_stereo(out, voices, tempo, rows_per_pat, hihat_div=2, title="Stereo"):
-    """OPT-IN dual-SID. voices = list of (ch0, role, stemfile); ch 0-5 map to the
+def build_stereo(out, voices, tempo, rows_per_pat, hihat_div=2, title="Stereo",
+                 combined=None):
+    """OPT-IN dual-SID. voices = list of (ch0, role, src); ch 0-5 map to the
     6 SID voices (0-2 = SID1, 3-5 = SID2). role assigns the instrument/treatment.
+    src is a stem file, or '@N' to pull channel N (1-based) from the combined
+    MIDI (`combined` = (div, notes, drums, end_tick)); '@' alone = its drum kit.
+    Drum roles kick|snare|hihat|perc each take one GM subset onto their own voice
+    so the whole kit sounds at once; 'drums' = the full kit on a single voice.
     Default path stays 3-channel mono build()."""
     ROLE_INSTR = {"lead": 1, "bass": 2, "harm": 3, "counter": 9, "pad": 10}
+    DRUM_ROLE = {"drums": None, "kick": {4}, "snare": {5}, "hihat": {6}, "perc": {7, 8}}
     div = None; end_tick = 0; loaded = []
     for ch, role, f in voices:
-        d, et, mel, dr = load_stem(f)
+        if combined is not None and f.startswith("@"):
+            cdiv, cnotes, cdrums, cet = combined
+            mel = cnotes.get(int(f[1:]) - 1, []) if f[1:] else []
+            d, et, dr = cdiv, cet, cdrums
+        else:
+            d, et, mel, dr = load_stem(f)
         div = div or d; end_tick = max(end_tick, et)
         loaded.append((ch, role, mel, dr))
     tpr = div / 4.0
@@ -602,13 +613,14 @@ def build_stereo(out, voices, tempo, rows_per_pat, hihat_div=2, title="Stereo"):
         "crash": (8, note_byte(72), 6),
     }
 
-    def place_drums(ch, drums):
+    def place_drums(ch, drums, allow=None):
         best = {}
         for start, gm in drums:
             name = GM_DRUM.get(gm)
             if name not in drumdef: continue
             instr, nb, prio = drumdef[name]; r = int(round(start / tpr))
             if not (0 <= r < total_rows): continue
+            if allow is not None and instr not in allow: continue
             if r not in best or prio > best[r][0]: best[r] = (prio, instr, nb)
         snare_rows = sorted(r for r, (p, i, nb) in best.items() if i == 5)
         runs, cur = [], []
@@ -630,8 +642,8 @@ def build_stereo(out, voices, tempo, rows_per_pat, hihat_div=2, title="Stereo"):
         return sum(cnt.values())
 
     for ch, role, mel, dr in loaded:
-        if role == "drums":
-            n = place_drums(ch, dr); print(f"  v{ch+1} drums: {n} hits")
+        if role in DRUM_ROLE:
+            n = place_drums(ch, dr, DRUM_ROLE[role]); print(f"  v{ch+1} {role}: {n} hits")
         elif role in ROLE_INSTR:
             place_voice(ch, mel, ROLE_INSTR[role]); print(f"  v{ch+1} {role}: {len(mel)} notes")
         else:
@@ -692,7 +704,12 @@ if __name__ == "__main__":
         for v in a.voice:
             ch, role, f = v.split("=", 2)
             voices.append((int(ch) - 1, role.strip().lower(), f))
-        build_stereo(a.out, voices, a.tempo, a.rows_per_pat, a.hihat_div, a.title)
+        combined = None               # '@N' voices slice the combined input MIDI
+        if a.inp and any(f.startswith("@") for _, _, f in voices):
+            cdiv, cet, cnotes, cdrums = parse_midi(a.inp)
+            combined = (cdiv, cnotes, cdrums, cet)
+        build_stereo(a.out, voices, a.tempo, a.rows_per_pat, a.hihat_div, a.title,
+                     combined)
     else:
         stems = {k: v for k, v in (("lead", a.lead), ("bass", a.bass),
                                    ("harm", a.harm), ("drums", a.drums)) if v}
