@@ -112,7 +112,7 @@ def load_stem(path):
 
 def build(path, out, tempo, rows_per_pat, hihat_div=2, mode="shared", chmap=None,
           kick_bass=False, fill=None, stems=None, title="In The Navy",
-          intro_fill=True):
+          intro_fill=True, arp_fill=False):
     if stems:
         # Build from deliberately-chosen named stem files (one part each, all on
         # the same aligned grid) instead of guessing channels in a combined MIDI.
@@ -219,13 +219,19 @@ def build(path, out, tempo, rows_per_pat, hihat_div=2, mode="shared", chmap=None
                 fill_keys.append(key)
         fill = fill_keys
         MIN_GAP = 8                                # only gaps >= half a bar
+        # act[r] = the full CHORD (sorted tuple of every pitch the winning source
+        # holds at row r), not just one note. A mono part is a 1-tuple. The priority
+        # pool still applies: the first-listed source that sounds owns the row.
         act = [None] * total_rows
         for src in reversed(fill):                 # first listed wins -> overwrite last
-            for start, dur, pit in sorted(notes.get(src, [])):
+            rowset = {}
+            for start, dur, pit in notes.get(src, []):
                 r0 = int(round(start / tpr))
                 r1 = min(total_rows, r0 + max(1, int(round(dur / tpr))))
                 for r in range(max(0, r0), r1):
-                    act[r] = pit
+                    rowset.setdefault(r, set()).add(pit)
+            for r, ps in rowset.items():
+                act[r] = tuple(sorted(ps))
         filled = 0; r = 0
         while r < total_rows:
             if grid[0][r][0] != REST:
@@ -234,14 +240,25 @@ def build(path, out, tempo, rows_per_pat, hihat_div=2, mode="shared", chmap=None
             while j < total_rows and grid[0][j][0] == REST:
                 j += 1
             if j - r >= MIN_GAP:
-                prev = None
+                # --arp-fill: where the source holds a CHORD (>=2 notes), cycle its
+                # real tones one-per-row (a chord-matched arpeggio) instead of
+                # freezing on one note — which against the bass/melody sounds wrong
+                # in chord-heavy intros/interludes. Mono parts are unchanged: hold
+                # the top note, retrigger only on change.
+                prev_ch = None; ai = 0; sounding = False
                 for k in range(r, j):
-                    if act[k] is not None:
-                        if act[k] != prev:
-                            grid[0][k] = (note_byte(act[k]), 9); filled += 1
-                        prev = act[k]
-                    elif prev is not None:
-                        grid[0][k] = (KEYOFF, 0); prev = None
+                    ch = act[k]
+                    if ch is None:
+                        if sounding: grid[0][k] = (KEYOFF, 0); sounding = False
+                        prev_ch = None; continue
+                    if arp_fill and len(ch) > 1:
+                        if ch != prev_ch: ai = 0   # restart the arp on a new chord
+                        grid[0][k] = (note_byte(ch[ai % len(ch)]), 9); filled += 1
+                        ai += 1; sounding = True
+                    elif ch != prev_ch:            # mono / arp off: top note, held
+                        grid[0][k] = (note_byte(ch[-1]), 9); filled += 1
+                        sounding = True
+                    prev_ch = ch
             r = j
         names = [src.split("/")[-1] if isinstance(src, str) else f"ch{src+1}"
                  for src in fill]
@@ -746,6 +763,11 @@ if __name__ == "__main__":
                          "Use when the source has a deliberate sparse build-up "
                          "before the bass drops (a dance anthem) — keeps the build "
                          "and the bass-drop's punch")
+    ap.add_argument("--arp-fill", action="store_true",
+                    help="when a --fill source holds a CHORD, arpeggiate its real "
+                         "tones (one per row) instead of freezing on one note — "
+                         "fixes chord-heavy intros/interludes that sound wrong as a "
+                         "single held note. Mono fills are unaffected")
     ap.add_argument("--fill", default=None,
                     type=lambda x: [t.strip() for t in x.split(",")],
                     metavar="SRC[,SRC...]",
@@ -798,4 +820,4 @@ if __name__ == "__main__":
                                    ("harm", a.harm), ("drums", a.drums)) if v}
         build(a.inp, a.out, a.tempo, a.rows_per_pat, a.hihat_div, a.mode, a.map,
               a.kick_bass, a.fill, stems or None, a.title,
-              intro_fill=not a.no_intro_fill)
+              intro_fill=not a.no_intro_fill, arp_fill=a.arp_fill)

@@ -45,6 +45,15 @@ python3 midi_to_sng.py  "/home/annejan/Projects/martin/assets/Village People In 
   build-up** before the bass drops (a dance anthem) — filling it erases the build
   and the bass-drop loses its punch. The Key, The Secret: bass enters bar 14 after
   a building intro → `--no-intro-fill` restores the build → DROP → breakdown.
+- `--arp-fill` when a `--fill` source holds a **chord** (≥2 simultaneous notes),
+  cycle its real tones one-per-row (a chord-matched arpeggio) instead of freezing
+  on one note. A mono SID voice can only sound one note, so a held chord-tone (a
+  lone 3rd/5th) reads as *wrong* against the bass/melody in chord-heavy intros &
+  interludes; arpeggiating expresses the actual chord. Mono fills are unaffected
+  (a 1-note "chord" is just the note). The Key, The Secret: fill 51 → 410 notes.
+  (This is the "chord-derived arpeggios (real tones, not fixed intervals)" TODO —
+  the Harmony *instrument*'s wavetable arp is a FIXED root/+7/+12 shape; this is
+  the real per-chord version, on the fill voice.)
 - `--fill CHAN[,CHAN…]` (combined-MIDI mode) counter-melody from these channels
   (1-based, priority pool: first listed wins) into the lead's *long* holes only
   (≥ half a bar). **Now the recommended way to keep a signature riff** once the

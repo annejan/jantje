@@ -54,6 +54,20 @@ def make_solo(div=96, bars=8, active=None, ch=0, pitch=72, name="Solo"):
     return hdr + _track(ev, name=name, ch=ch)
 
 
+def _chord_stem(div=96, bars=8, root=60):
+    """A 1-track SMF holding a sustained triad (root/+4/+7) for the whole song —
+    a real chord, to exercise --arp-fill (3 simultaneous notes per row)."""
+    body = bytearray()
+    for off in (0, 4, 7):                       # all three note-ons at t=0
+        body += _vlq(0) + bytes([0x90, root + off, 100])
+    span = bars * 4 * div
+    for i, off in enumerate((0, 4, 7)):         # note-offs at the end
+        body += _vlq(span if i == 0 else 0) + bytes([0x80, root + off, 0])
+    body += _vlq(0) + b"\xff\x2f\x00"
+    return (b"MThd" + struct.pack(">IHHH", 6, 0, 1, div)
+            + b"MTrk" + struct.pack(">I", len(body)) + bytes(body))
+
+
 def make_midi(div=96, bars=8):
     """A 3-track SMF: a 'Melody' on ch1, a 'Bass' on ch2, a kick on ch10."""
     q = div                                     # one quarter note
@@ -137,6 +151,31 @@ def test_build_stem_fill_from_file(tmp_path):
     _assert_valid_sng(out)
     assert out.read_bytes() != nofill.read_bytes(), \
         "stem --fill placed no notes (the rescaled hook never reached the grid)"
+
+
+def test_build_arp_fill_chord(tmp_path):
+    """--arp-fill cycles a chord's real tones across the fill rows. Build a lead
+    with a long hole + a 3-note chord source, and assert the arp'd fill places
+    more notes than the held-single-note version (it emits a tone per row)."""
+    # lead: only bar 0, then a long rest (so the fill fires in bars 1-7)
+    lead = tmp_path / "lead.mid"
+    lead.write_bytes(make_solo(active={0}))
+    bass = tmp_path / "bass.mid"
+    bass.write_bytes(make_solo(ch=1, pitch=40))
+    # a chord stem: three sustained notes (a triad) held across the whole song
+    chord = tmp_path / "chord.mid"
+    chord.write_bytes(_chord_stem())
+    stems = {"lead": str(lead), "bass": str(bass)}
+
+    held = tmp_path / "held.sng"
+    m.build(None, str(held), tempo=6, rows_per_pat=64, mode="shared",
+            fill=[str(chord)], stems=stems, title="T", arp_fill=False)
+    arped = tmp_path / "arped.sng"
+    m.build(None, str(arped), tempo=6, rows_per_pat=64, mode="shared",
+            fill=[str(chord)], stems=stems, title="T", arp_fill=True)
+    _assert_valid_sng(held)
+    _assert_valid_sng(arped)
+    assert arped.read_bytes() != held.read_bytes(), "arp-fill changed nothing on a chord"
 
 
 def test_build_no_intro_fill(midi_file, tmp_path):

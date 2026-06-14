@@ -190,10 +190,11 @@ python3 midi_to_sng.py "sources/Bjork_Human_Behavior.mid" renders/human_behaviou
   --map 4,1,- --mode clean --fill 2 --tempo 08 --title "Human Behaviour"
 
 # The Key, The Secret (Urban Cookie Collective) — as a HAPPY HARDCORE anthem:
-# lead = ch3 "Leadvocal"; synth+piano fill the gaps; --kick-bass pumps; 173 bpm
-# via 3x multispeed (gt2reloc -S3); --no-intro-fill keeps the build → bass-drop.
+# lead = ch3 "Leadvocal"; synth+piano fill the gaps (--arp-fill arpeggiates their
+# chords); --kick-bass pumps; 173 bpm via 3x multispeed (-S3); --no-intro-fill
+# keeps the build → bass-drop.
 python3 midi_to_sng.py "sources/the_key_the_secret.mid" renders/the_key_the_secret.sng \
-  --map 3,2,- --mode clean --fill 5,6 --kick-bass --no-intro-fill \
+  --map 3,2,- --mode clean --fill 5,6 --kick-bass --no-intro-fill --arp-fill \
   --tempo 13 --title "The Key The Secret"
 ```
 
