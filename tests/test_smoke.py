@@ -198,6 +198,36 @@ def _roll_midi(div=96):
             + _track(drums, name="Drums", ch=9))
 
 
+def _bend_midi(div=96):
+    """A 1-track lead (ch1): one held note with a MIDI pitch-bend UP (~+2 st)
+    halfway through — to drive the --bends -> portamento path."""
+    body = bytearray()
+    body += _vlq(div) + bytes([0x90, 60, 100])           # note on C4 (NOT row 0 —
+    #                                                      row 0/ch 0 is the tempo Fxx)
+    body += _vlq(div) + bytes([0xE0, 0x00, 0x7F])        # pitch bend ~+2 semitones
+    body += _vlq(div) + bytes([0x80, 60, 0])             # note off
+    body += _vlq(0) + b"\xff\x2f\x00"
+    return (b"MThd" + struct.pack(">IHHH", 6, 0, 1, div)
+            + b"MTrk" + struct.pack(">I", len(body)) + bytes(body))
+
+
+def test_parse_bends_and_portamento(tmp_path):
+    """parse_bends reads 0xE0 events; --bends turns a lead note's bend into a
+    portamento command, so the .sng differs from the no-bends build."""
+    p = tmp_path / "bend.mid"
+    p.write_bytes(_bend_midi())
+    b = m.parse_bends(str(p))
+    assert 0 in b and any(abs(v) > 1.0 for _, v in b[0]), "bend not parsed"
+    plain = tmp_path / "plain.sng"
+    m.build(str(p), str(plain), tempo=6, rows_per_pat=64, mode="clean",
+            chmap="1,-,-", title="T")
+    bent = tmp_path / "bent.sng"
+    m.build(str(p), str(bent), tempo=6, rows_per_pat=64, mode="clean",
+            chmap="1,-,-", title="T", bends=b)
+    _assert_valid_sng(bent)
+    assert bent.read_bytes() != plain.read_bytes(), "bends changed nothing"
+
+
 def test_build_riser_smooth(tmp_path):
     """A long snare roll becomes ONE gliding riser note + a portamento-up command,
     not N re-triggered notes. Drive the path and assert a well-formed .sng."""

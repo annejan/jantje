@@ -54,6 +54,14 @@ python3 midi_to_sng.py  "/home/annejan/Projects/martin/assets/Village People In 
   (This is the "chord-derived arpeggios (real tones, not fixed intervals)" TODO —
   the Harmony *instrument*'s wavetable arp is a FIXED root/+7/+12 shape; this is
   the real per-chord version, on the fill voice.)
+- `--bends` render the LEAD channel's MIDI pitch-bends (0xE0) as SID portamento
+  glides (combined-MIDI only). MIDI bend isn't a note, so it's normally dropped
+  and an expressive guitar/synth line goes flat. Where the lead's source channel
+  bends ≥0.5 semitone DURING a note, a CMD_PORTAUP/DOWN is added (reusing the
+  riser's auto-glide). `parse_bends()` reads them; ±2 semitone range assumed.
+  NOTE: only helps if the MIDI actually has bends on the LEAD channel — e.g.
+  Today's overdriven gtr (ch5) has them; the Comfortably Numb MIDI has NONE
+  (its solo is static), so --bends won't revive it without a better MIDI.
 - `--tempo-map BAR:HH,…` a GENRE JOURNEY in one song: drops a `CMD_SETTEMPO`
   (Fxx) at each 0-based bar so the tempo morphs mid-track (hex; lower = faster).
   Use at 1x (no `-S`) so the hex maps straight to bpm = `750/HH`. Friet 2030:

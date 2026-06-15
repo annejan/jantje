@@ -93,6 +93,55 @@ def parse_midi(path):
         pos = end
     return div, end_tick, notes, drums
 
+
+def parse_bends(path, semitone_range=2.0):
+    """Pitch-bend (0xE0) events per channel -> {ch: [(tick, semitones)]}, sorted.
+    14-bit value, 8192 = centre; default ±2 semitone range. Used to render
+    expressive guitar/synth bends (e.g. a Gilmour solo) as SID portamento."""
+    with open(path, "rb") as f:
+        d = f.read()
+    assert d[:4] == b"MThd"
+    pos = 8 + struct.unpack(">I", d[4:8])[0]
+    bends = defaultdict(list)
+    while pos < len(d) - 8:
+        if d[pos:pos+4] != b"MTrk":
+            pos += 1; continue
+        tl = struct.unpack(">I", d[pos+4:pos+8])[0]
+        p = pos + 8; end = p + tl; t = 0; run = None
+        while p < end:
+            dt = 0
+            while True:
+                b = d[p]; p += 1; dt = (dt << 7) | (b & 0x7F)
+                if not b & 0x80: break
+            t += dt
+            if p >= end: break
+            st = d[p]
+            if st & 0x80: p += 1; run = st
+            else: st = run
+            if st is None: break
+            hi, ch = st & 0xF0, st & 0x0F
+            if st == 0xFF:
+                p += 1; ml = 0
+                while True:
+                    b = d[p]; p += 1; ml = (ml << 7) | (b & 0x7F)
+                    if not b & 0x80: break
+                p += ml
+            elif st in (0xF0, 0xF7):
+                sl = 0
+                while True:
+                    b = d[p]; p += 1; sl = (sl << 7) | (b & 0x7F)
+                    if not b & 0x80: break
+                p += sl
+            else:
+                nd = 1 if hi in (0xC0, 0xD0) else 2
+                if hi == 0xE0:
+                    val = (d[p] | (d[p+1] << 7)) - 8192
+                    bends[ch].append((t, val / 8192.0 * semitone_range))
+                p += nd
+        pos = end
+    return {ch: sorted(v) for ch, v in bends.items()}
+
+
 def clamp_oct(midi):
     while midi < GT_LO: midi += 12
     while midi > GT_HI: midi -= 12
@@ -112,7 +161,7 @@ def load_stem(path):
 
 def build(path, out, tempo, rows_per_pat, hihat_div=2, mode="shared", chmap=None,
           kick_bass=False, fill=None, stems=None, title="In The Navy",
-          intro_fill=True, arp_fill=False, tempo_map=None):
+          intro_fill=True, arp_fill=False, tempo_map=None, bends=None):
     if stems:
         # Build from deliberately-chosen named stem files (one part each, all on
         # the same aligned grid) instead of guessing channels in a combined MIDI.
@@ -361,6 +410,35 @@ def build(path, out, tempo, rows_per_pat, hihat_div=2, mode="shared", chmap=None
     # of re-triggered climbing notes. Take their rows out of the per-row drum map
     # so place_drums leaves the channel clear for the riser to own.
     effects = {}                                       # {(ch, row): (cmd, param)}
+
+    # ----- pitch bends -> portamento on the lead (e.g. a Gilmour solo) -----
+    # MIDI pitch-bend isn't a note, so it's normally dropped → guitar/synth bends go
+    # flat. With --bends, where the LEAD's source channel bends DURING a note, add a
+    # portamento-up/down command so the SID note glides, matching the bend gesture.
+    # (Combined-MIDI lead only; reuses the riser's auto-glide speed-table entry 2.)
+    if bends and lead_ch is not None and lead_ch in bends:
+        seq = bends[lead_ch]                           # [(tick, semitones)], sorted
+        def bend_at(tk):
+            v = 0.0
+            for bt, bv in seq:
+                if bt <= tk: v = bv
+                else: break
+            return v
+        bent = 0
+        for start, dur, _pit in notes[lead_ch]:
+            r = int(round(start / tpr))
+            if not (0 <= r < total_rows) or grid[0][r][0] in (REST, KEYOFF):
+                continue
+            b0 = bend_at(start)
+            bpk = max((bend_at(start + k) for k in range(0, dur + 1, max(1, dur // 6))),
+                      key=lambda v: abs(v - b0), default=b0)
+            delta = bpk - b0                           # how far it bends during the note
+            if abs(delta) >= 0.5:
+                effects[(0, r)] = (1 if delta > 0 else 2, 2)   # CMD_PORTAUP/DOWN
+                bent += 1
+        if bent:
+            print(f"  bends: {bent} lead notes glided via portamento")
+
     # A riser is a DISCRETE pre-drop roll (<= ~2 bars). A LONGER run of snares is
     # the GROOVE (a sustained 16th / clap-backbeat pattern), NOT a buildup — leave
     # it as real hits, else the riser swallows the backbeat (felt as "lost the
@@ -824,6 +902,11 @@ if __name__ == "__main__":
                          "boundaries (hex; lower = faster). e.g. 0:07,24:05,48:04 "
                          "ramps slow->fast across one song. Use at 1x (no -S "
                          "multispeed) so the hex values map straight to tempo")
+    ap.add_argument("--bends", action="store_true",
+                    help="render the lead channel's MIDI pitch-bends as SID "
+                         "portamento glides (combined-MIDI mode) — for expressive "
+                         "guitar/synth bends (e.g. a Gilmour solo) that are "
+                         "otherwise dropped and go flat")
     ap.add_argument("--fill", default=None,
                     type=lambda x: [t.strip() for t in x.split(",")],
                     metavar="SRC[,SRC...]",
@@ -877,4 +960,5 @@ if __name__ == "__main__":
         build(a.inp, a.out, a.tempo, a.rows_per_pat, a.hihat_div, a.mode, a.map,
               a.kick_bass, a.fill, stems or None, a.title,
               intro_fill=not a.no_intro_fill, arp_fill=a.arp_fill,
-              tempo_map=parse_tempo_map(a.tempo_map) if a.tempo_map else None)
+              tempo_map=parse_tempo_map(a.tempo_map) if a.tempo_map else None,
+              bends=parse_bends(a.inp) if (a.bends and a.inp) else None)
