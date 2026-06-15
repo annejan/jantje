@@ -361,7 +361,11 @@ def build(path, out, tempo, rows_per_pat, hihat_div=2, mode="shared", chmap=None
     # of re-triggered climbing notes. Take their rows out of the per-row drum map
     # so place_drums leaves the channel clear for the riser to own.
     effects = {}                                       # {(ch, row): (cmd, param)}
-    riser_runs = [run for run in runs if len(run) >= 8]
+    # A riser is a DISCRETE pre-drop roll (<= ~2 bars). A LONGER run of snares is
+    # the GROOVE (a sustained 16th / clap-backbeat pattern), NOT a buildup — leave
+    # it as real hits, else the riser swallows the backbeat (felt as "lost the
+    # beat"). 32 rows = 2 bars on the 16th grid.
+    riser_runs = [run for run in runs if len(run) >= 8 and run[-1] - run[0] <= 32]
     for run in riser_runs:
         for r in run:
             best.pop(r, None)

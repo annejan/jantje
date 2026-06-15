@@ -237,7 +237,9 @@ so only 125 / 150 / 187, nothing between. Pack at N× with `gt2reloc … -S2` (o
 - **Snare rolls → ONE smooth gliding riser** — a single held note on a sustained-
   noise instrument, pitched up by a portamento command, instead of N re-triggered
   climbing notes (which machine-gun: a fresh ADSR attack per note). Per-row
-  GoatTracker commands ride a small `effects` map the serializer reads.
+  GoatTracker commands ride a small `effects` map the serializer reads. **Only a
+  short roll (≤ 2 bars) becomes a riser** — a longer run of snares/claps is the
+  GROOVE, not a buildup; eating it swallows the backbeat ("lost the beat").
 - **Crash → a real swell** (slow-attack noise + a filter table that ramps the
   cutoff up, then clears its own routing so it lets go of the voice).
 - **Don't cram a counter-melody onto a busy voice** — only fill a voice across
