@@ -162,7 +162,7 @@ def load_stem(path):
 def build(path, out, tempo, rows_per_pat, hihat_div=2, mode="shared", chmap=None,
           kick_bass=False, fill=None, stems=None, title="In The Navy",
           intro_fill=True, arp_fill=False, tempo_map=None, bends=None,
-          risers=False):
+          risers=False, drum_filter=False, lead_8va_rows=None):
     if stems:
         # Build from deliberately-chosen named stem files (one part each, all on
         # the same aligned grid) instead of guessing channels in a combined MIDI.
@@ -529,7 +529,18 @@ def build(path, out, tempo, rows_per_pat, hihat_div=2, mode="shared", chmap=None
                 zones.append(f"bar{bar}=F{t:02X}")
         print(f"  tempo map: {tempo} -> {' '.join(zones)}")
 
-    serialize_sng(out, title, tempo, grid, rows_per_pat, effects)
+    # ----- raise the intro lead phrase an octave (brighter opening hook) -----
+    # Scoped to the first N grid rows so only the intro statement lifts, not every
+    # later recurrence of the same riff (a MIDI-source transpose would hit them all).
+    if lead_8va_rows:
+        lifted = 0
+        for r in range(min(lead_8va_rows, total_rows)):
+            nb, ins_ = grid[0][r]
+            if FIRSTNOTE <= nb <= LASTNOTE:
+                grid[0][r] = (min(nb + 12, LASTNOTE), ins_); lifted += 1
+        print(f"  intro lead +1 octave: {lifted} notes in rows 0..{lead_8va_rows-1}")
+
+    serialize_sng(out, title, tempo, grid, rows_per_pat, effects, drum_filter)
 
 
 # ---------------------------------------------------------------------------
@@ -687,7 +698,8 @@ def build_arranged(path, out, tempo, rows_per_pat, sections,
     serialize_sng(out, title, tempo, [out0, out1, out2], rows_per_pat)
 
 
-def serialize_sng(out, title, tempo, grid, rows_per_pat, effects=None):
+def serialize_sng(out, title, tempo, grid, rows_per_pat, effects=None,
+                  drum_filter=False):
     """Write the grid (3 or 6 channels) + the shared instrument/table bank to a
     GTS5 .sng. 6 channels auto-load as dual-SID stereo in the editor.
     effects: optional {(ch, row): (cmd, param)} of per-row GoatTracker commands
@@ -726,9 +738,31 @@ def serialize_sng(out, title, tempo, grid, rows_per_pat, effects=None):
             0x21,0x00,0x00,0xFF, 0x11,0x00,0x00,0xFF]
     wt_r = [0x00,0x00, 0x00,0x00, 0x00,0x00, 0x00,0x00,
             0x00,0x07,0x0C,0x09, 0x0C,0x06,0x00,0x00]
-    # PULSE table: 50% then sweep up/down forever (available for pulse leads)
+    # SNARE/CLAP: NOISE + light filter, FAT (lowish pitch + body decay), sitting
+    # above the kick but thick. ABSOLUTE pitch (right col >= 0x80 = fixed note
+    # 0x80+note) so it's the same hit on any trigger note.
+    clap_wt = len(wt_l) + 1
+    wt_l += [0x81, 0x81, 0xFF]                        # noise crack, noise body, loop
+    wt_r += [0xAE, 0xA6, clap_wt + 1]                 # abs ~A#3 -> F3 = fat snare, loop body
+    # HIHAT: short HIGH noise tick (own table so it can sit well above the snare).
+    hihat_wt = len(wt_l) + 1
+    wt_l += [0x81, 0xFF]                              # high noise, hold (short ADSR cuts it)
+    wt_r += [0xDA, hihat_wt]                          # abs ~note 90 = bright high hat
+    # KICK "BONK": a filtered PULSE with a fast downward PITCH DROP (the tri
+    # pitch-drop kick was "chilp"/chirpy). ABSOLUTE pitch.
+    bonk_wt = len(wt_l) + 1
+    wt_l += [0x41, 0x41, 0x41, 0xFF]                  # pulse x3, loop
+    wt_r += [0x9C, 0x92, 0x88, bonk_wt + 2]           # abs ~E2->A1->E1 fast drop, hold low
+    # PULSE table.
+    #  ptbl=1: 50% then a slow PWM sweep up/down forever = a FLANGER shimmer on the
+    #    lead/bass (the pulse-width wobble reads as phasing -> de-flattens the mix).
+    #  ptbl=pw_static: a fixed 50% width that just holds (no sweep) — for the KICK,
+    #    whose held pulse tail otherwise chirps as the sweeping width whistles.
     pt_l = [0x88, 0x60, 0x60, 0xFF]
     pt_r = [0x00, 0x04, 0xFC, 0x02]
+    pw_static = len(pt_l) + 1
+    pt_l += [0x88, 0xFF]
+    pt_r += [0x00, pw_static]                         # set 50%, hold (no sweep)
     # FILTER table: two programs.
     #  steps 1-5 (ftbl=1): AUTO-WAH low-pass on the bass voice — start fairly
     #    open ($70) and loop a slow up/down cutoff sweep ($70..$D0). Retriggers
@@ -749,16 +783,43 @@ def serialize_sng(out, title, tempo, grid, rows_per_pat, effects=None):
     st_l = [0x03, 0x80]
     st_r = [0x20, 0x02]
 
+    # CLAP filter: low-pass, quick snap down with light res -> the filtered "fwip"
+    # of the snare/clap without the self-oscillating "bweup". Routes the shared
+    # filter to v3 for the hit.
+    clap_filter = len(ft_l) + 1
+    ft_l += [0x90, 0x00, 0x06, 0xFF]
+    ft_r += [0x10 | (1 << swell_sid), 0xA0, 0xF8, clap_filter + 3]
+    # BONK-KICK filter: low-pass sweeping DOWN, light res -> the filtered house bonk.
+    bonk_filter = len(ft_l) + 1
+    ft_l += [0x90, 0x00, 0x0A, 0xFF]
+    ft_r += [0x10 | (1 << swell_sid), 0x90, 0xFB, bonk_filter + 3]
+
+    # OPT-IN (--drum-filter): a DECAYING low-pass on the drum voice (voice 3). A
+    # static LP just muffles the kit ("gemaffeld" — kills the TAK transient). So
+    # instead: open BRIGHT on the attack (keeps the snap/punch), then ramp the
+    # cutoff shut fast so only the harsh sustained "8-bit" noise tail is rolled off.
+    # = BOOM TAK with less fizz. Routing v3 momentarily steals the filter from the
+    # bass auto-wah while a hit rings, then it lets go. Default off (keepers/friet
+    # untouched). Snare+hihat only — kick/tom are triangle, not harsh.
+    df = 0
+    if drum_filter:
+        df = len(ft_l) + 1                              # 1-based step of this program
+        ft_l += [0x90, 0x00, 0x10, 0xFF]
+        ft_r += [0x20 | (1 << swell_sid),  # lowpass, light res 2, route v3
+                 0xC0,                      # bright cutoff on attack (the TAK lives here)
+                 0xF4,                      # ramp -0x0C/tick for $10 ticks -> snap shut
+                 df + 3]                    # then hold closed (jump to self)
+
     def ins(ad, sr, wtbl, fw, name, ptbl=0, ftbl=0, stbl=0, vibdelay=0):
         nm = name.encode("latin1")[:16]; nm += b"\x00" * (16 - len(nm))
         return bytes([ad, sr, wtbl, ptbl, ftbl, stbl, vibdelay, 2, fw]) + nm
     instruments = [
-        ins(0x09, 0xF8, 1, 0x21, "Lead", stbl=1, vibdelay=0x08),  # saw + vibrato
-        ins(0x08, 0xF8, 1, 0x21, "Bass", ftbl=1),                 # saw + auto-wah (looping cutoff sweep, stays open)
+        ins(0x09, 0xF2, 7, 0x41, "Lead", ptbl=1, stbl=1, vibdelay=0x08),  # pulse + PWM flanger + vibrato (short release = clean stop)
+        ins(0x08, 0xF8, 7, 0x41, "Bass", ptbl=1),                 # pulse + PWM flanger (frees the filter for drums)
         ins(0x12, 0x88, 9, 0x21, "Harmony"),                      # saw ARPEGGIO, louder sustain
-        ins(0x08, 0x00, 13, 0x11, "Kick"),                        # punchy pitch-drop
-        ins(0x0A, 0x00, 5, 0x81, "Snare"),                        # fuller noise
-        ins(0x05, 0x00, 5, 0x81, "Hihat"),                        # short noise
+        ins(0x08, 0x00, bonk_wt, 0x41, "Kick", ptbl=pw_static, ftbl=bonk_filter),  # BONK kick (static PW = no chirp)
+        ins(0x08, 0x00, clap_wt, 0x81, "Snare", ftbl=clap_filter),  # fat noise snare/clap
+        ins(0x03, 0x00, hihat_wt, 0x81, "Hihat", ftbl=df),         # short HIGH noise tick
         ins(0x0C, 0x00, 3, 0x11, "Tom"),                          # tri hit
         ins(0xA9, 0x00, 5, 0x81, "Swell", ftbl=6),                # slow-attack noise + opening filter sweep
         ins(0x09, 0x89, 7, 0x41, "Fill", ptbl=1),                 # pulse counter-melody (fills lead rests)
@@ -912,6 +973,16 @@ if __name__ == "__main__":
                          "risers. OFF by default: a steady clap/snare backbeat "
                          "clusters into runs and would all be eaten (no beat left). "
                          "Only enable for songs with real buildup rolls")
+    ap.add_argument("--lead-8va-rows", type=int, default=None, metavar="N",
+                    help="raise the lead an octave for the first N grid rows only "
+                         "(brighter intro hook). Scoped so later recurrences of the "
+                         "same riff stay put, unlike a whole-track transpose")
+    ap.add_argument("--drum-filter", action="store_true",
+                    help="route the noise snare/hihat through a DECAYING SID low-pass "
+                         "(bright on the attack so the TAK transient survives, then "
+                         "snaps shut to kill the harsh '8-bit' noise tail). Steals the "
+                         "shared filter from the bass auto-wah while a hit rings, so "
+                         "the bass goes a touch brighter. Default off")
     ap.add_argument("--bends", action="store_true",
                     help="render the lead channel's MIDI pitch-bends as SID "
                          "portamento glides (combined-MIDI mode) — for expressive "
@@ -972,4 +1043,5 @@ if __name__ == "__main__":
               intro_fill=not a.no_intro_fill, arp_fill=a.arp_fill,
               tempo_map=parse_tempo_map(a.tempo_map) if a.tempo_map else None,
               bends=parse_bends(a.inp) if (a.bends and a.inp) else None,
-              risers=a.risers)
+              risers=a.risers, drum_filter=a.drum_filter,
+              lead_8va_rows=a.lead_8va_rows)
