@@ -161,7 +161,8 @@ def load_stem(path):
 
 def build(path, out, tempo, rows_per_pat, hihat_div=2, mode="shared", chmap=None,
           kick_bass=False, fill=None, stems=None, title="In The Navy",
-          intro_fill=True, arp_fill=False, tempo_map=None, bends=None):
+          intro_fill=True, arp_fill=False, tempo_map=None, bends=None,
+          risers=False):
     if stems:
         # Build from deliberately-chosen named stem files (one part each, all on
         # the same aligned grid) instead of guessing channels in a combined MIDI.
@@ -443,7 +444,11 @@ def build(path, out, tempo, rows_per_pat, hihat_div=2, mode="shared", chmap=None
     # the GROOVE (a sustained 16th / clap-backbeat pattern), NOT a buildup — leave
     # it as real hits, else the riser swallows the backbeat (felt as "lost the
     # beat"). 32 rows = 2 bars on the 16th grid.
-    riser_runs = [run for run in runs if len(run) >= 8 and run[-1] - run[0] <= 32]
+    # OPT-IN (--risers): a steady backbeat (clap/snare on the grid) clusters into
+    # runs and would ALL turn into risers, eating the beat (Corona, friet). Default
+    # OFF -> snares/claps stay as real hits; --risers only for genuine pre-drop rolls.
+    riser_runs = ([run for run in runs if len(run) >= 8 and run[-1] - run[0] <= 32]
+                  if risers else [])
     for run in riser_runs:
         for r in run:
             best.pop(r, None)
@@ -902,6 +907,11 @@ if __name__ == "__main__":
                          "boundaries (hex; lower = faster). e.g. 0:07,24:05,48:04 "
                          "ramps slow->fast across one song. Use at 1x (no -S "
                          "multispeed) so the hex values map straight to tempo")
+    ap.add_argument("--risers", action="store_true",
+                    help="turn genuine pre-drop snare ROLLS into smooth gliding "
+                         "risers. OFF by default: a steady clap/snare backbeat "
+                         "clusters into runs and would all be eaten (no beat left). "
+                         "Only enable for songs with real buildup rolls")
     ap.add_argument("--bends", action="store_true",
                     help="render the lead channel's MIDI pitch-bends as SID "
                          "portamento glides (combined-MIDI mode) — for expressive "
@@ -961,4 +971,5 @@ if __name__ == "__main__":
               a.kick_bass, a.fill, stems or None, a.title,
               intro_fill=not a.no_intro_fill, arp_fill=a.arp_fill,
               tempo_map=parse_tempo_map(a.tempo_map) if a.tempo_map else None,
-              bends=parse_bends(a.inp) if (a.bends and a.inp) else None)
+              bends=parse_bends(a.inp) if (a.bends and a.inp) else None,
+              risers=a.risers)

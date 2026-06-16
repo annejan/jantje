@@ -235,7 +235,7 @@ def test_build_riser_smooth(tmp_path):
     p.write_bytes(_roll_midi())
     out = tmp_path / "riser.sng"
     m.build(str(p), str(out), tempo=6, rows_per_pat=64,
-            mode="clean", chmap="1,2,-", title="T")
+            mode="clean", chmap="1,2,-", title="T", risers=True)
     _assert_valid_sng(out)
 
 
