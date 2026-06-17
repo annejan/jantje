@@ -162,7 +162,7 @@ def load_stem(path):
 def build(path, out, tempo, rows_per_pat, hihat_div=2, mode="shared", chmap=None,
           kick_bass=False, fill=None, stems=None, title="In The Navy",
           intro_fill=True, arp_fill=False, tempo_map=None, bends=None,
-          risers=False, drum_filter=False, lead_8va_rows=None):
+          risers=False, drum_filter=False, lead_8va_rows=None, house=False):
     if stems:
         # Build from deliberately-chosen named stem files (one part each, all on
         # the same aligned grid) instead of guessing channels in a combined MIDI.
@@ -540,7 +540,7 @@ def build(path, out, tempo, rows_per_pat, hihat_div=2, mode="shared", chmap=None
                 grid[0][r] = (min(nb + 12, LASTNOTE), ins_); lifted += 1
         print(f"  intro lead +1 octave: {lifted} notes in rows 0..{lead_8va_rows-1}")
 
-    serialize_sng(out, title, tempo, grid, rows_per_pat, effects, drum_filter)
+    serialize_sng(out, title, tempo, grid, rows_per_pat, effects, drum_filter, house)
 
 
 # ---------------------------------------------------------------------------
@@ -699,7 +699,7 @@ def build_arranged(path, out, tempo, rows_per_pat, sections,
 
 
 def serialize_sng(out, title, tempo, grid, rows_per_pat, effects=None,
-                  drum_filter=False):
+                  drum_filter=False, house=False):
     """Write the grid (3 or 6 channels) + the shared instrument/table bank to a
     GTS5 .sng. 6 channels auto-load as dual-SID stereo in the editor.
     effects: optional {(ch, row): (cmd, param)} of per-row GoatTracker commands
@@ -813,13 +813,29 @@ def serialize_sng(out, title, tempo, grid, rows_per_pat, effects=None,
     def ins(ad, sr, wtbl, fw, name, ptbl=0, ftbl=0, stbl=0, vibdelay=0):
         nm = name.encode("latin1")[:16]; nm += b"\x00" * (16 - len(nm))
         return bytes([ad, sr, wtbl, ptbl, ftbl, stbl, vibdelay, 2, fw]) + nm
+
+    # CLEAN by default (the original voices that made the early "artworks" — e.g.
+    # Children of the Night — sound clear). The SAW lead/bass cut through and stay
+    # defined; the pulse+PWM "house" voices muddy non-dance tracks (low, no
+    # definition). The house kit (BONK kick, fat clap, high hat, PWM flanger
+    # lead/bass) is OPT-IN via --house — tuned for Saturday Night, wrong as a
+    # global default.
+    if house:
+        lead  = ins(0x09, 0xF2, 7, 0x41, "Lead", ptbl=1, stbl=1, vibdelay=0x08)  # pulse + PWM flanger
+        bass  = ins(0x08, 0xF8, 7, 0x41, "Bass", ptbl=1)                          # pulse + PWM flanger
+        kick  = ins(0x08, 0x00, bonk_wt, 0x41, "Kick", ptbl=pw_static, ftbl=bonk_filter)  # BONK
+        snare = ins(0x08, 0x00, clap_wt, 0x81, "Snare", ftbl=clap_filter)         # fat noise clap
+        hihat = ins(0x03, 0x00, hihat_wt, 0x81, "Hihat", ftbl=df)                 # high tick
+    else:
+        lead  = ins(0x09, 0xF8, 1, 0x21, "Lead", stbl=1, vibdelay=0x08)           # SAW + vibrato (clean, cuts through)
+        bass  = ins(0x08, 0xF8, 1, 0x21, "Bass", ftbl=1)                          # SAW + auto-wah
+        kick  = ins(0x08, 0x00, 13, 0x11, "Kick")                                 # tri pitch-drop
+        snare = ins(0x0A, 0x00, 5, 0x81, "Snare", ftbl=df)                        # noise (LP if --drum-filter)
+        hihat = ins(0x05, 0x00, 5, 0x81, "Hihat", ftbl=df)                        # noise (LP if --drum-filter)
     instruments = [
-        ins(0x09, 0xF2, 7, 0x41, "Lead", ptbl=1, stbl=1, vibdelay=0x08),  # pulse + PWM flanger + vibrato (short release = clean stop)
-        ins(0x08, 0xF8, 7, 0x41, "Bass", ptbl=1),                 # pulse + PWM flanger (frees the filter for drums)
+        lead, bass,
         ins(0x12, 0x88, 9, 0x21, "Harmony"),                      # saw ARPEGGIO, louder sustain
-        ins(0x08, 0x00, bonk_wt, 0x41, "Kick", ptbl=pw_static, ftbl=bonk_filter),  # BONK kick (static PW = no chirp)
-        ins(0x08, 0x00, clap_wt, 0x81, "Snare", ftbl=clap_filter),  # fat noise snare/clap
-        ins(0x03, 0x00, hihat_wt, 0x81, "Hihat", ftbl=df),         # short HIGH noise tick
+        kick, snare, hihat,
         ins(0x0C, 0x00, 3, 0x11, "Tom"),                          # tri hit
         ins(0xA9, 0x00, 5, 0x81, "Swell", ftbl=6),                # slow-attack noise + opening filter sweep
         ins(0x09, 0x89, 7, 0x41, "Fill", ptbl=1),                 # pulse counter-melody (fills lead rests)
@@ -977,6 +993,12 @@ if __name__ == "__main__":
                     help="raise the lead an octave for the first N grid rows only "
                          "(brighter intro hook). Scoped so later recurrences of the "
                          "same riff stay put, unlike a whole-track transpose")
+    ap.add_argument("--house", action="store_true",
+                    help="opt-in HOUSE kit: BONK pulse-kick, fat noise clap, high "
+                         "hat, and pulse+PWM 'flanger' lead/bass. Tuned for dance "
+                         "bangers (Saturday Night). Default OFF = the CLEAN saw "
+                         "lead/bass + tri kick that keep non-dance tracks defined "
+                         "(the pulse voices muddy them)")
     ap.add_argument("--drum-filter", action="store_true",
                     help="route the noise snare/hihat through a DECAYING SID low-pass "
                          "(bright on the attack so the TAK transient survives, then "
@@ -1044,4 +1066,4 @@ if __name__ == "__main__":
               tempo_map=parse_tempo_map(a.tempo_map) if a.tempo_map else None,
               bends=parse_bends(a.inp) if (a.bends and a.inp) else None,
               risers=a.risers, drum_filter=a.drum_filter,
-              lead_8va_rows=a.lead_8va_rows)
+              lead_8va_rows=a.lead_8va_rows, house=a.house)
