@@ -132,14 +132,31 @@ def read_midi(path):
     syl.sort()
     for ch in chan_notes:
         chan_notes[ch].sort()
-    return syl, chan_notes
+    return syl, chan_notes, _div
 
 
-def pick_vocal_channel(chan_notes, target, forced):
+def pick_vocal_channel(chan_notes, syl, div, target, forced):
+    """The vocal channel = the one whose note ONSETS best line up with the lyric
+    ticks (a count-match alone is wrong: a busy chord channel can have a closer
+    note count yet not track the words — that picked ch7 'Chords' over ch1 'Melody'
+    on The Sign). Score by lyric-alignment fraction; break ties by count-closeness."""
     if forced is not None:
         return forced - 1
-    # the channel whose note count is closest to the rendered onset count
-    return min(chan_notes, key=lambda c: abs(len(chan_notes[c]) - target))
+    lyr = sorted(t for t, _ in syl)
+    tol = max(1, div // 8)                          # ~32nd-note window
+
+    def score(c):
+        ts = chan_notes[c]
+        if len(ts) < max(4, len(lyr) // 10):        # too sparse to be the vocal
+            return (-1.0, 0)
+        hit = 0
+        for lt in lyr:
+            j = bisect.bisect_left(ts, lt)
+            if any(abs(ts[k] - lt) <= tol for k in (j - 1, j) if 0 <= k < len(ts)):
+                hit += 1
+        align = hit / len(lyr) if lyr else 0.0
+        return (align, -abs(len(ts) - target))      # max align, then closest count
+    return max(chan_notes, key=score)
 
 
 def group_lines(syl):
@@ -176,10 +193,10 @@ def main():
     if not onsets:
         sys.exit("no vocal onsets found (try --lead-instr)")
 
-    syl, chan_notes = read_midi(a.midi)
+    syl, chan_notes, div = read_midi(a.midi)
     if not syl:
         sys.exit("no lyric/text events in the MIDI")
-    vc = pick_vocal_channel(chan_notes, len(onsets), a.vocal_channel)
+    vc = pick_vocal_channel(chan_notes, syl, div, len(onsets), a.vocal_channel)
     voc = chan_notes[vc]
     n = min(len(voc), len(onsets))                  # pair i-th note <-> i-th onset
     voc = voc[:n]; ons = onsets[:n]

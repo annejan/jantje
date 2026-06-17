@@ -239,6 +239,45 @@ def test_build_riser_smooth(tmp_path):
     _assert_valid_sng(out)
 
 
+def test_build_house_differs_from_clean(midi_file, tmp_path):
+    """--house swaps in the pulse+PWM lead/bass + BONK kick + clap/hat kit. Default
+    is the CLEAN saw lead/bass; the two must produce different .sng instrument data
+    (a regression guard: house was once the default and muddied non-dance tracks)."""
+    clean = tmp_path / "clean.sng"
+    m.build(midi_file, str(clean), tempo=6, rows_per_pat=64, mode="clean",
+            chmap="1,2,-", title="T")
+    house = tmp_path / "house.sng"
+    m.build(midi_file, str(house), tempo=6, rows_per_pat=64, mode="clean",
+            chmap="1,2,-", title="T", house=True)
+    _assert_valid_sng(house)
+    assert house.read_bytes() != clean.read_bytes(), "--house changed no instruments"
+
+
+def test_build_drum_filter_differs(midi_file, tmp_path):
+    """--drum-filter adds a decaying low-pass program for the noise snare/hat."""
+    plain = tmp_path / "plain.sng"
+    m.build(midi_file, str(plain), tempo=6, rows_per_pat=64, mode="clean",
+            chmap="1,2,-", title="T")
+    filt = tmp_path / "filt.sng"
+    m.build(midi_file, str(filt), tempo=6, rows_per_pat=64, mode="clean",
+            chmap="1,2,-", title="T", drum_filter=True)
+    _assert_valid_sng(filt)
+    assert filt.read_bytes() != plain.read_bytes(), "--drum-filter changed nothing"
+
+
+def test_build_lead_8va_rows_lifts_intro(midi_file, tmp_path):
+    """--lead-8va-rows raises the lead an octave for the first N rows only, so the
+    .sng differs from the un-lifted build (the intro hook brightens)."""
+    flat = tmp_path / "flat.sng"
+    m.build(midi_file, str(flat), tempo=6, rows_per_pat=64, mode="clean",
+            chmap="1,2,-", title="T")
+    lifted = tmp_path / "lifted.sng"
+    m.build(midi_file, str(lifted), tempo=6, rows_per_pat=64, mode="clean",
+            chmap="1,2,-", title="T", lead_8va_rows=16)
+    _assert_valid_sng(lifted)
+    assert lifted.read_bytes() != flat.read_bytes(), "--lead-8va-rows lifted nothing"
+
+
 def test_build_no_intro_fill(midi_file, tmp_path):
     """--no-intro-fill (intro_fill=False) skips tiling the bass riff into a thin
     intro — used when the source has a deliberate sparse build before the drop."""
