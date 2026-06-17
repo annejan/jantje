@@ -11,6 +11,7 @@ round-trip — then audition them live in the [goattracker2-Qt][gt2] editor.
 | file | what |
 | ---- | ---- |
 | `midi_to_sng.py` | the arranger: MIDI (or named stem files) → `.sng` |
+| `sng_to_lrc.py` | derive a synced `.lrc` from a render + a karaoke MIDI |
 | `midi_arrange.py` | planner: print the proposed role/drum mapping for a MIDI |
 | `midi_inspect.py` | list a MIDI's tracks (name/GM-program/notes) to find the vocal |
 | `AGENTS.md` | full tooling notes, `.sng` format, SID-synth cheat-sheet, lessons |
@@ -228,6 +229,30 @@ so only 125 / 150 / 187, nothing between. Pack at N× with `gt2reloc … -S2` (o
 `-S3`) and the player runs N×50 Hz: bpm = `750 × N / tempo`. So `--tempo 09 … -S2`
 = 167 bpm (the missing middle). Multispeed also gives finer effect timing.
 
+## Synced lyrics (`.lrc`)
+
+The render plays the vocal as the LEAD channel at a **fixed** tempo and ignores
+the source MIDI's own tempo — so lyric timing must come from *our* render, not
+the original recording. `sng_to_lrc.py` maps a karaoke MIDI's lyrics onto the
+rendered vocal-note onsets (`karaoke vocal note[i] ↔ rendered lead onset[i]`):
+
+```sh
+python3 sng_to_lrc.py out.sng karaoke.mid out.lrc --title "T" --artist "A"
+```
+
+- Reads the tempo straight from the `.sng` (`Fxx ÷ 50` s/row) and extracts the
+  lead-channel onsets; **auto-detects the karaoke vocal channel by lyric-
+  alignment** — the channel whose note onsets line up with the lyric ticks, not
+  merely the closest note count (a busy chord channel can tie on count yet not
+  track the words). Override with `--vocal-channel N`; nudge with `--offset MS`.
+- **No lyric events in the MIDI?** Take an official `.lrc` and *affine-map* it
+  onto the render's vocal span — anchor its first/last vocal line to the render's
+  first/last lead onset, then hand-tune any mid-song drift. (How Go West got its
+  lyrics; Saturday Night was scaled then hand-synced section by section.)
+
+This feeds **[Alfred][alfred]**, which builds C64 demos from the `.sng`/`.sid` +
+`.lrc`. Keep the four as a consistent set per song.
+
 ## Lessons baked in (the hard way)
 
 - **4 elements, 3 mono voices.** Sharing drums with the bass kills the drums;
@@ -260,6 +285,11 @@ so only 125 / 150 / 187, nothing between. Pack at N× with `gt2reloc … -S2` (o
   a wall of noise). The conga/bongo/timbale/woodblock family is left UNMAPPED on
   purpose — `tom` (prio 3) outranks `hihat` (prio 2), so mapping it deletes the
   offbeat groove in conga-heavy files.
+- **Clean is the default; `--house` is opt-in.** The pulse+PWM "flanger"
+  lead/bass + BONK pulse-kick + fat clap (tuned for a dance banger) were once the
+  default and *muddied every other track* — low, undefined, no audible vocal. The
+  default is the clean **saw** lead/bass + tri kick that cut through and read as
+  "the singing". Reach for `--house` only when you want the fat pumping kit.
 - **gt2reloc is single-SID only** — 6-voice renders are for editor audition, not
   `.sid` export.
 - **8580 vs 6581 voicing**, auto-wah bass, pitch-drop kicks — see `AGENTS.md`.
@@ -287,7 +317,10 @@ configured to keep that style (E7xx/E401/E501 off) and only flag real problems
 
 - **[goattracker2-Qt][gt2]** — the Qt editor this drives (live `--rpc`, an MCP
   bridge, `gt2reloc` for `.sid`/`.prg` export, `sid2sng` for `.sid` → `.sng`).
+- **[Alfred][alfred]** — builds C64 demos from Jantje's `.sng`/`.sid` + `.lrc`
+  (the downstream of the `sng_to_lrc.py` pipeline).
 - Drop your own MIDIs / stems / `.prg` / `.sid` in **`sources/`** (git-ignored).
 - Renders are **not** tracked either — regenerate them; `renders/` is git-ignored.
 
 [gt2]: https://codeberg.org/Ranzbak/goattracker2-Qt
+[alfred]: https://github.com/annejan/alfred
